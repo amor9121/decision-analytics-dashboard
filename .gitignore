@@ -1,0 +1,29 @@
+# === Python cache / bytecode ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# === Virtual environments ===
+.venv/
+venv/
+env/
+
+# === Streamlit / Python tooling ===
+.streamlit/
+.ipynb_checkpoints/
+
+# === OS junk files ===
+.DS_Store
+Thumbs.db
+
+# === Editor / IDE ===
+.vscode/
+.idea/
+
+# === Logs & temp files ===
+*.log
+*.tmp
+
+# === Outputs / generated files ===
+outputs/

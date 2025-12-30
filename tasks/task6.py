@@ -3,7 +3,6 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
@@ -16,6 +15,11 @@ from sklearn.metrics import (
     roc_curve,
     roc_auc_score,
 )
+
+try:
+    import seaborn as sns
+except ModuleNotFoundError:
+    sns = None
 
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
 import sys
