@@ -4,5 +4,6 @@ numpy
 scipy
 matplotlib
 pulp
-scikit-learn
 seaborn
+scikit-learn
+
