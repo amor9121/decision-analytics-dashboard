@@ -6,7 +6,8 @@ from tasks.task1 import solve_task1
 from tasks.task2_s1 import solve_task2_s1
 from tasks.task2_s2 import solve_task2_s2
 from tasks.task3 import solve_task3
-from tasks.task4 import solve_task4
+
+# from tasks.task4 import solve_task4
 from tasks.task5 import solve_task5
 
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
@@ -297,9 +298,17 @@ if run_all:
     t3["download_df"] = pd.DataFrame(t3.get("allocation", []))
 
     # ---- Task 4 ----
-    t4 = ensure_task_row(solve_task4(), "Task 4")
-    t4["case"] = "Random sample (n=400)"
-    t4["download_df"] = t4.get("download_df", pd.DataFrame())
+    # t4 = ensure_task_row(solve_task4(), "Task 4")
+    # t4["case"] = "Random sample (n=400)"
+    # t4["download_df"] = t4.get("download_df", pd.DataFrame())
+
+    t4 = {
+        "name": "Task 4",
+        "case": "None",
+        "status": "Pending",
+        "allocation": None,
+        "download_df": pd.DataFrame(),
+    }
 
     # ---- Task 5 ----
     t5 = ensure_task_row(solve_task5(), "Task 5")

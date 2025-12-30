@@ -1,11 +1,12 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
 # -----------------------------
 # Task 4 – AED Sample Analysis
 # -----------------------------
 def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
-
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import seaborn as sns
 
     aed = pd.read_csv(csv_path)
     aed.columns = aed.columns.str.strip()
