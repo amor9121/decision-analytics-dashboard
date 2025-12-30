@@ -5,11 +5,7 @@ def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
 
     import pandas as pd
     import matplotlib.pyplot as plt
-
-    try:
-        import seaborn as sns
-    except ModuleNotFoundError:
-        sns = None
+    import seaborn as sns
 
     aed = pd.read_csv(csv_path)
     aed.columns = aed.columns.str.strip()
