@@ -6,4 +6,3 @@ matplotlib
 pulp
 seaborn
 scikit-learn
-
