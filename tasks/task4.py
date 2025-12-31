@@ -1,10 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-
-try:
-    import seaborn as sns
-except ModuleNotFoundError:
-    sns = None
+import seaborn as sns
 
 
 # -----------------------------
@@ -144,6 +140,9 @@ def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
     )
 
     return {
+        "name": "Task 4",
+        "case": "AED descriptive analysis (random sample n=400)",
+        "allocation": None,
         "sample": sample,
         "age_summary": age_summary,
         "los_summary": los_summary,
@@ -167,6 +166,6 @@ if __name__ == "__main__":
     print("\nLength of Stay summary:\n", t4["los_summary"])
 
     # Save figures instead of plt.show() (works in any environment)
-    t4["fig1"].savefig("task4_fig1.png", dpi=200, bbox_inches="tight")
-    t4["fig2"].savefig("task4_fig2.png", dpi=200, bbox_inches="tight")
+    t4["fig1"].savefig("outputs/task4_fig1.png", dpi=200, bbox_inches="tight")
+    t4["fig2"].savefig("outputs/task4_fig2.png", dpi=200, bbox_inches="tight")
     print("\nSaved: task4_fig1.png, task4_fig2.png")

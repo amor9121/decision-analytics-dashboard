@@ -1,14 +1,20 @@
 import streamlit as st
 import pandas as pd
 
+# ---- tasks ----
 from core.data import days, wage
 from tasks.task1 import solve_task1
 from tasks.task2_s1 import solve_task2_s1
 from tasks.task2_s2 import solve_task2_s2
 from tasks.task3 import solve_task3
-
 from tasks.task4 import solve_task4
 from tasks.task5 import solve_task5
+
+# ---- utils ----
+from utils.schedule_utils import build_schedule_summary, build_aed_summary
+from utils.render_utils import render_task_block, metric_row
+from utils.result_utils import ensure_task_row
+from utils.export_utils import single_task_csv_text
 
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
 import sys
@@ -18,221 +24,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 # =================================================
-
-
-#  ---- Helpers ----
-
-
-def build_final_table(allocation: pd.DataFrame, days, wage: dict) -> pd.DataFrame:
-    table = allocation.copy()
-    table["Weekly Total"] = table[days].sum(axis=1)
-    table["Hourly Wage (£)"] = table.index.map(lambda i: wage.get(i, ""))
-    table["Weekly Wage (£)"] = table.index.map(
-        lambda i: table.loc[i, "Weekly Total"] * wage[i] if i in wage else ""
-    )
-
-    daily = table[days].sum(axis=0)
-    daily["Weekly Total"] = table["Weekly Total"].sum()
-    daily["Hourly Wage (£)"] = ""
-    daily["Weekly Wage (£)"] = table["Weekly Wage (£)"].sum()
-    table.loc["Daily Total"] = daily
-
-    return table.round(2)
-
-
-def check_daily_coverage(allocation: pd.DataFrame, days, required=14) -> dict:
-    daily = allocation[days].sum(axis=0)
-    ok = bool((daily.round(6) == required).all())
-    return {"ok": ok, "daily_totals": daily.round(2)}
-
-
-def grouped_csv_text(results, days, wage) -> str:
-    cols = days + ["Weekly Total", "Hourly Wage (£)", "Weekly Wage (£)"]
-    blocks = []
-
-    for r in results:
-        allocation = r.get("allocation")
-        if allocation is None:
-            continue
-
-        final_table = build_final_table(allocation, days, wage)
-        numeric = final_table[cols].reset_index(drop=True)
-
-        title_row = pd.DataFrame(
-            [[r.get("name", "Task")] + [""] * (len(cols) - 1)], columns=cols
-        )
-        header_row = pd.DataFrame([cols], columns=cols)
-
-        blocks.extend([title_row, header_row, numeric])
-
-    out = pd.concat(blocks, ignore_index=True)
-    return out.to_csv(index=False, header=False)
-
-
-def flat_csv_text(results, days, wage) -> str:
-    rows = []
-    cols = days + ["Weekly Total", "Hourly Wage (£)", "Weekly Wage (£)"]
-
-    for r in results:
-        name = r.get("name", "Task")
-        allocation = r.get("allocation")
-        if allocation is None:
-            continue
-
-        ft = build_final_table(allocation, days, wage)[cols].copy()
-        ft.insert(0, "Operator", ft.index)
-        ft.insert(0, "Scenario", name)
-
-        ft["Total cost (£)"] = r.get("cost")
-        ft["Cost increase (%)"] = r.get("cost_increase_pct")
-        ft["Fairness gap"] = r.get("gap")
-
-        rows.append(ft.reset_index(drop=True))
-
-    out = pd.concat(rows, ignore_index=True)
-    return out.to_csv(index=False)
-
-
-def single_task_csv_text(task_result: dict, days, wage) -> str:
-    """Return a CSV for one task result (one schedule)."""
-    allocation = task_result.get("allocation")
-    if allocation is None:
-        return ""
-
-    ft = build_final_table(allocation, days, wage).copy()
-    ft.insert(0, "Operator", ft.index)
-    ft.insert(0, "Scenario", task_result.get("name", "Task"))
-
-    # add useful metadata columns (optional)
-    ft["Total cost (£)"] = task_result.get("cost")
-    ft["Cost increase (%)"] = task_result.get("cost_increase_pct")
-    ft["Fairness gap"] = task_result.get("gap")
-
-    return ft.reset_index(drop=True).to_csv(index=False)
-
-
-def metric_row(r: dict):
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total cost (£)", r.get("cost", "-"))
-    c2.metric("Cost increase (%)", r.get("cost_increase_pct", "-"))
-    c3.metric("Fairness gap", "-" if r.get("gap") is None else r.get("gap"))
-
-
-def render_task_block(r: dict):
-    allocation = r.get("allocation")
-    if allocation is None:
-        st.warning("No allocation returned for this task.")
-        return
-
-    cov = check_daily_coverage(allocation, days)
-    if cov["ok"]:
-        st.success("Daily coverage satisfied: 14 hours per day ✅")
-    else:
-        st.error("Daily coverage NOT satisfied ❌")
-    st.caption(f"Daily totals: {cov['daily_totals'].to_dict()}")
-
-    # Task 3: skill coverage
-    if r.get("skill_coverage") is not None:
-        st.subheader("Skill coverage per day (should be ≥ 6 each)")
-        st.dataframe(
-            pd.DataFrame(r["skill_coverage"]).T.round(2), use_container_width=True
-        )
-
-    st.subheader("Final Schedule Table")
-    st.dataframe(build_final_table(allocation, days, wage), use_container_width=True)
-
-
-def build_schedule_summary(results: list[dict]) -> pd.DataFrame:
-    rows = []
-    for r in results:
-        allocation = r.get("allocation")
-
-        # Only scheduling tasks have allocation / coverage
-        if allocation is None:
-            continue
-
-        coverage_ok = check_daily_coverage(allocation, days)["ok"]
-        coverage_cell = "✅" if coverage_ok else "❌"
-
-        rows.append(
-            {
-                "Task": r.get("name", ""),
-                "Total cost (£)": r.get("cost", ""),
-                "Cost increase (%)": r.get("cost_increase_pct", ""),
-                "Fairness gap": r.get("gap", ""),
-                "Daily coverage = 14?": coverage_cell,
-                "Has skill coverage?": (
-                    "✅" if r.get("skill_coverage") is not None else "–"
-                ),
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
-def build_aed_summary(results: list[dict]) -> pd.DataFrame:
-    rows = []
-    for r in results:
-        name = r.get("name", "")
-
-        if name not in ["Task 4", "Task 5", "Task 6"]:
-            continue
-
-        rows.append(
-            {
-                "Task": name,
-                "Case": r.get("case", ""),
-                "Sample": "n = 400" if name in ["Task 4", "Task 5", "Task 6"] else "",
-                "Breach rate (%)": r.get("breach_rate_pct", ""),
-                "Main method": (
-                    "Descriptive analysis"
-                    if name == "Task 4"
-                    else (
-                        "Statistical tests"
-                        if name == "Task 5"
-                        else "Prediction (ML)" if name == "Task 6" else ""
-                    )
-                ),
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
-def render_task_downloads(results, days, wage, n_cols=3):
-    with st.expander("⬇️ Downloads", expanded=True):
-        cols = st.columns(n_cols)
-        i = 0
-
-        for r in results:
-            csv_text = single_task_csv_text(r, days, wage)
-            if not csv_text:
-                continue
-
-            task_name = r.get("name", "Task")
-            safe_name = task_name.replace("/", "-")
-
-            with cols[i % n_cols]:
-                st.download_button(
-                    label=f"Download {task_name}",
-                    data=csv_text.encode("utf-8"),
-                    file_name=f"{safe_name}.csv",
-                    mime="text/csv",
-                    key=f"dl_{safe_name}_{i}",  # avoid key collisions
-                )
-            i += 1
-
-
-def ensure_task_row(obj, default_name, default_status="Done"):
-    """Make sure a task output is a dict with at least name/status so it shows in summary."""
-    if isinstance(obj, dict):
-        obj.setdefault("name", default_name)
-        obj.setdefault("status", default_status)
-        obj.setdefault(
-            "allocation", None
-        )  # descriptive tasks typically have no allocation
-        return obj
-    return {"name": default_name, "status": default_status, "allocation": None}
 
 
 # ---- Streamlit UI ----
@@ -301,14 +92,6 @@ if run_all:
     t4 = ensure_task_row(solve_task4(), "Task 4")
     t4["case"] = "Random sample (n=400)"
     t4["download_df"] = t4.get("download_df", pd.DataFrame())
-
-    # t4 = {
-    #    "name": "Task 4",
-    #    "case": "None",
-    #    "status": "Pending",
-    #    "allocation": None,
-    #    "download_df": pd.DataFrame(),
-    # }
 
     # ---- Task 5 ----
     t5 = ensure_task_row(solve_task5(), "Task 5")

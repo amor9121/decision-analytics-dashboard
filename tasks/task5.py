@@ -68,9 +68,9 @@ def solve_task5(
     table_5_1 = pd.DataFrame(
         {
             "Metric": [
-                f"Prolonged threshold (LoS ≥ {int(prolonged_quantile*100)}th percentile)",
+                f"Prolonged threshold (LoS ≥ {int(prolonged_quantile * 100)}th percentile)",
                 "Prolonged stay rate (%)",
-                f"4-hour target threshold (minutes)",
+                "4-hour target threshold (minutes)",
                 "Breach count",
                 "Breach rate (%)",
                 "Sample size",
@@ -96,8 +96,8 @@ def solve_task5(
         for f in features:
             if f not in df_.columns:
                 continue
-            g0 = df_.loc[df_[outcome_col] == False, f].dropna()
-            g1 = df_.loc[df_[outcome_col] == True, f].dropna()
+            g0 = df_.loc[~df_[outcome_col], f].dropna()
+            g1 = df_.loc[df_[outcome_col], f].dropna()
             if len(g0) < 5 or len(g1) < 5:
                 continue
             stat, p = stats.mannwhitneyu(g0, g1, alternative="two-sided")
@@ -264,6 +264,9 @@ def solve_task5(
     figs["fig1"] = fig1
 
     return {
+        "name": "Task 5",
+        "case": "AED statistical analysis",
+        "allocation": None,
         "sample": sample,
         "tables": {
             "table_5_1": table_5_1,
@@ -286,19 +289,3 @@ def solve_task5(
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
 if __name__ == "__main__":
     t5 = solve_task5()
-
-    print("\n=== Task 5: Statistical Analysis ===")
-    print("\nTable 5.1 – Prolonged stay & KPIs\n", t5["tables"]["table_5_1"])
-    print("\nTable 5.2 – Numeric variables vs Breach\n", t5["tables"]["table_5_2"])
-    print("\nTable 5.3 – Categorical variables vs Breach\n", t5["tables"]["table_5_3"])
-    print("\nBreach rate (%):", t5["stats"]["breach_rate_pct"])
-
-    # Save the 2 figures (overview + 4-in-1)
-    t5["figures"]["fig0"].savefig(
-        "task5_fig0_overview.png", dpi=200, bbox_inches="tight"
-    )
-    t5["figures"]["fig1"].savefig(
-        "task5_fig1_key_breach_drivers.png", dpi=200, bbox_inches="tight"
-    )
-
-    print("\nSaved: task5_fig0_overview.png, task5_fig1_key_breach_drivers.png")
