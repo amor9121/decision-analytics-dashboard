@@ -15,6 +15,8 @@ from utils.schedule_utils import build_schedule_summary, build_aed_summary
 from utils.render_utils import render_task_block, metric_row
 from utils.result_utils import ensure_task_row
 from utils.export_utils import single_task_csv_text
+from utils.figure_utils import collect_task_figures, figures_zip_bytes
+
 
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
 import sys
@@ -288,24 +290,45 @@ with tab6:
 
 # ---- Download ----
 
+# ---- Download ----
 st.divider()
 st.subheader("4. Downloads")
+st.caption("CSV: scheduling results | ZIP: figures")
 
 with st.expander("Downloads", expanded=True):
-    cols = st.columns(4)  # 3 buttons per row
+
+    cols = st.columns(3)  # 每列 3 個 task
     i = 0
 
     for r in results:
-        csv_text = single_task_csv_text(r, days, wage)
         task_name = r.get("name", "Task")
+        safe_name = task_name.replace("/", "-")
 
-        if csv_text:
-            with cols[i % 4]:
+        with cols[i % 3]:
+
+            st.markdown(f"**{task_name}**")
+
+            # ===== CSV download =====
+            csv_text = single_task_csv_text(r, days, wage)
+            if csv_text:
                 st.download_button(
-                    label=f"{task_name}",
+                    label="⬇️ CSV",
                     data=csv_text.encode("utf-8"),
-                    file_name=f"{task_name}.csv".replace("/", "-"),
+                    file_name=f"{safe_name}.csv",
                     mime="text/csv",
-                    key=f"dl_{task_name}",
+                    key=f"dl_csv_{safe_name}_{i}",
                 )
-            i += 1
+
+            # ===== Figures download (ZIP) =====
+            figs = collect_task_figures(r)
+            if figs:
+                zip_bytes = figures_zip_bytes(figs, dpi=200)
+                st.download_button(
+                    label="🖼️ Figures (ZIP)",
+                    data=zip_bytes,
+                    file_name=f"{safe_name}_figures.zip",
+                    mime="application/zip",
+                    key=f"dl_fig_{safe_name}_{i}",
+                )
+
+        i += 1

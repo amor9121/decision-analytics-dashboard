@@ -1,7 +1,8 @@
 import pandas as pd
 import streamlit as st
-from .schedule_utils import check_daily_coverage, build_final_table
-from .export_utils import single_task_csv_text
+from utils.schedule_utils import check_daily_coverage, build_final_table
+from utils.export_utils import single_task_csv_text
+from utils.figure_utils import collect_task_figures, figures_zip_bytes
 from core.data import days, wage
 
 
@@ -42,19 +43,31 @@ def render_task_downloads(results, days, wage, n_cols=3):
         i = 0
 
         for r in results:
-            csv_text = single_task_csv_text(r, days, wage)
-            if not csv_text:
-                continue
-
             task_name = r.get("name", "Task")
             safe_name = task_name.replace("/", "-")
 
             with cols[i % n_cols]:
-                st.download_button(
-                    label=f"Download {task_name}",
-                    data=csv_text.encode("utf-8"),
-                    file_name=f"{safe_name}.csv",
-                    mime="text/csv",
-                    key=f"dl_{safe_name}_{i}",  # avoid key collisions
-                )
+                # ---- CSV download (existing) ----
+                csv_text = single_task_csv_text(r, days, wage)
+                if csv_text:
+                    st.download_button(
+                        label=f"Download {task_name} (CSV)",
+                        data=csv_text.encode("utf-8"),
+                        file_name=f"{safe_name}.csv",
+                        mime="text/csv",
+                        key=f"dl_csv_{safe_name}_{i}",
+                    )
+
+                # ---- Figures download (new) ----
+                figs = collect_task_figures(r)
+                if figs:
+                    zip_bytes = figures_zip_bytes(figs, dpi=200)
+                    st.download_button(
+                        label=f"Download {task_name} Figures (ZIP)",
+                        data=zip_bytes,
+                        file_name=f"{safe_name}_figures.zip",
+                        mime="application/zip",
+                        key=f"dl_fig_{safe_name}_{i}",
+                    )
+
             i += 1
