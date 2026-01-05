@@ -55,28 +55,55 @@ def build_schedule_summary(results: list[dict]) -> pd.DataFrame:
 
 def build_aed_summary(results: list[dict]) -> pd.DataFrame:
     rows = []
+
     for r in results:
         name = r.get("name", "")
 
         if name not in ["Task 4", "Task 5", "Task 6"]:
             continue
 
-        rows.append(
-            {
-                "Task": name,
-                "Case": r.get("case", ""),
-                "Sample": "n = 400" if name in ["Task 4", "Task 5", "Task 6"] else "",
-                "Breach rate (%)": r.get("breach_rate_pct", ""),
-                "Main method": (
-                    "Descriptive analysis"
-                    if name == "Task 4"
-                    else (
-                        "Statistical tests"
-                        if name == "Task 5"
-                        else "Prediction (ML)" if name == "Task 6" else ""
-                    )
-                ),
-            }
-        )
+        # --- Common fields ---
+        row = {
+            "Task": name,
+            "Samples (n)": 400,
+            "Outcome prevalence": (
+                f"Breach = {r.get('breach_rate_pct', ''):.2f}%"
+                if isinstance(r.get("breach_rate_pct", None), (int, float))
+                else r.get("breach_rate_pct", "")
+            ),
+        }
+
+        # --- Task-specific fields ---
+        if name == "Task 4":
+            row.update(
+                {
+                    "Objective": "Describe AED workload & breach profile",
+                    "Feature scope": "Full record",
+                    "Method": "Descriptive statistics & visualisation",
+                    "Final model selected": "–",
+                }
+            )
+
+        elif name == "Task 5":
+            row.update(
+                {
+                    "Objective": "Identify factors associated with breach",
+                    "Feature scope": "Full record",
+                    "Method": "Statistical tests",
+                    "Final model selected": "–",
+                }
+            )
+
+        elif name == "Task 6":
+            row.update(
+                {
+                    "Objective": "Predict breach at triage time",
+                    "Feature scope": "Arrival-time only",
+                    "Method": "ML classification + stratified CV",
+                    "Final model selected": "Logistic Regression",
+                }
+            )
+
+        rows.append(row)
 
     return pd.DataFrame(rows)

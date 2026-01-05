@@ -10,6 +10,15 @@ from tasks.task3 import solve_task3
 from tasks.task4 import solve_task4
 from tasks.task5 import solve_task5
 from tasks.task6 import solve_task6
+from tasks.task8 import (
+    show_patient_lookup,
+    show_range_filter,
+    show_modify_delete,
+    show_audit_log,
+    clear_audit_log,
+    reset_managed_data,
+)
+
 
 # ---- utils ----
 from utils.schedule_utils import build_schedule_summary, build_aed_summary
@@ -18,49 +27,16 @@ from utils.result_utils import ensure_task_row
 from utils.export_utils import single_task_csv_text
 from utils.figure_utils import collect_task_figures, figures_zip_bytes
 from utils.data_tidy import show_tidy_summary_expander
+from utils.state_utils import init_state
 
-
-# ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
-import sys
+# ---- path ----
 from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-# =================================================
-
-
-# ---- Streamlit UI ----
-
-st.set_page_config(page_title="Decision Analytics Dashboard", layout="wide")
-st.title("Decision Analytics Dashboard")
-
-st.markdown(
-    """
-**What this app does**
-- **Task 1**: Baseline cost-minimising schedule (LP)
-- **Task 2 – Scenario 1**: Minimise workload inequality **subject to ≤ 1.8% cost increase**
-- **Task 2 – Scenario 2**: Find the **fairest** possible schedule, then minimise cost (two-stage)
-- **Task 3**: Add **skill constraints** (≥ 6 hours per skill per day) and report feasibility/cost
-- **Task 4**: Analyse a random sample of AED patient data to understand workload, patient flow, and breaches
-- **Task 5**: Use **statistical analysis** to investigate factors contributing to breaches or prolonged stays
-- **Task 6**: Apply **machine learning** to predict whether a patient will breach the 4-hour target
-"""
-)
-
-# Keep results in session_state (use empty list to avoid NoneType errors)
-if "results" not in st.session_state:
-    st.session_state["results"] = []
-
-left, right = st.columns([1, 2])
-with left:
-    run_all = st.button("Run Tasks 1–6", type="primary")
-with right:
-    st.caption("Tip: run once, then explore tabs + download CSVs.")
 
 # ---- Run All ----
 
-if run_all:
+
+@st.cache_data(show_spinner=True)
+def run_all_cached():
     # ---- Task 1 ----
     t1 = ensure_task_row(solve_task1(), "Task 1")
     t1["case"] = "Baseline (min cost)"
@@ -108,13 +84,61 @@ if run_all:
     t6["download_df"] = t6.get("summary", pd.DataFrame())
 
     # ---- Save ALL results once ----
-    st.session_state["results"] = [t1, t2s1, t2s2, t3, t4, t5, t6]
+    return [t1, t2s1, t2s2, t3, t4, t5, t6]
+
+
+RAW = Path("data/AED4Weeks.csv")
+MANAGED = Path("outputs/aed_managed.csv")
+init_state(RAW, MANAGED)
+
+# ---- Streamlit UI ----
+
+st.set_page_config(page_title="Decision Analytics Dashboard", layout="wide")
+st.title("Decision Analytics Dashboard")
+
+st.markdown(
+    """
+**What this app does**
+- **Task 1**: Baseline cost-minimising schedule (LP).
+- **Task 2 – Scenario 1**: Minimise workload inequality **subject to ≤ 1.8% cost increase**.
+- **Task 2 – Scenario 2**: Find the **fairest** possible schedule, then minimise cost (two-stage).
+- **Task 3**: Add **skill constraints** (≥ 6 hours per skill per day) and report feasibility/cost
+- **Task 4**: Analyse a random sample of AED patient data to understand workload, patient flow, and breaches.
+- **Task 5**: Use **statistical analysis** to investigate factors contributing to breaches or prolonged stays.
+- **Task 6**: Apply **machine learning** to predict whether a patient will breach the 4-hour target.
+- **Task 7**: The Streamlit dashboard provides interactive access to all analyses from Tasks 1–8.
+- **Task 8 Extension**: Additional data management capabilities (patient lookup, range filtering, modify/delete with logging) are integrated into the same interface.
+"""
+)
+
+# Keep results in session_state (use empty list to avoid NoneType errors)
+if "results" not in st.session_state:
+    st.session_state["results"] = None
+
+c1, c_spacer, c2 = st.columns([1, 3, 1])
+
+with c1:
+    run_all = st.button("Run Tasks", type="primary")
+
+with c2:
+    if st.button("Reset Results", help="Clear cached results and re-run if needed"):
+        run_all_cached.clear()
+        st.session_state["results"] = None
+        st.rerun()
+
+
+if run_all and st.session_state["results"] is None:
+    st.session_state["results"] = run_all_cached()
 
 results = st.session_state["results"]
 
-if not results:
-    st.info("Click **Run Tasks 1–6** to generate results.")
+if results is None:
+    st.info("**Tips**: Click **Run Tasks** once to generate results.\n")
     st.stop()
+else:
+    st.info(
+        "**Tips**: Click **Reset Results** to clears cached outputs and enables re-running when needed."
+    )
 
 # ---- Summary ----
 
@@ -131,15 +155,17 @@ st.dataframe(aed_summary_df, use_container_width=True, hide_index=True)
 # ---- Tabs ----
 
 st.subheader("3. Results")
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
     [
         "Task 1",
         "Task 2 – Scenario 1",
         "Task 2 – Scenario 2",
         "Task 3",
-        "Task 4 (AED)",
+        "Task 4",
         "Task 5",
         "Task 6",
+        "Task 7",
+        "Task 8",
     ]
 )
 
@@ -149,7 +175,7 @@ by_name = {r.get("name"): r for r in results}
 
 with tab1:
     st.info(
-        "Task 1 minimises total labour cost subject to availability, daily coverage, and minimum weekly hours."
+        "**Task 1 – Baseline Scheduling (LP)**: minimises total labour cost subject to availability, daily coverage, and minimum weekly hours."
     )
     r = by_name.get("Task 1") or results[0]
     metric_row(r)
@@ -157,7 +183,7 @@ with tab1:
 
 with tab2:
     st.info(
-        "Scenario 1 minimises fairness gap (max–min weekly hours) subject to cost ≤ baseline × 1.018."
+        "**Task 2 – Fairness vs Cost (Scenario 1)**: minimises fairness gap (max–min weekly hours) subject to cost ≤ baseline × 1.018."
     )
     r = (
         by_name.get("Task 2 - Senerio 1")
@@ -169,7 +195,7 @@ with tab2:
 
 with tab3:
     st.info(
-        "Scenario 2 finds the minimum possible fairness gap first, then minimises cost under that gap."
+        "**Task 2 – Fairness vs Cost (Scenario 2)**: finds the minimum possible fairness gap first, then minimises cost under that gap."
     )
     r = (
         by_name.get("Task 2 - Senerio 2")
@@ -181,7 +207,7 @@ with tab3:
 
 with tab4:
     st.info(
-        "Task 3 adds skill constraints: each day, Programming ≥ 6 and Troubleshooting ≥ 6 hours."
+        "**Task 3 – Skill-Constrained Scheduling**: adds skill constraints: each day, Programming ≥ 6 and Troubleshooting ≥ 6 hours."
     )
     r = by_name.get("Task 3") or results[3]
     metric_row(r)
@@ -189,7 +215,7 @@ with tab4:
 
 with tab5:
     st.info(
-        "Task 4 analyses AED patient data to understand workload, patient flow, and breaches."
+        "**Task 4 – AED Workload & Breach Analysis**: analyses AED patient data to understand workload, patient flow, and breaches."
     )
 
     r = by_name.get("Task 4")
@@ -266,7 +292,7 @@ with tab5:
 
 with tab6:
     st.info(
-        "Task 5 investigates potential factors associated with breaches or prolonged stays "
+        "**Task 5 – Statistical Factors Analysis**: investigates potential factors associated with breaches or prolonged stays "
         "using statistical analysis and management-focused summaries."
     )
 
@@ -293,7 +319,7 @@ with tab6:
 
 with tab7:
     st.info(
-        "This section explains how suitable machine learning algorithms were selected "
+        "**Task 6 – Breach Prediction (Machine Learning)**: explains how suitable machine learning algorithms were selected "
         "for Task 6 using the scikit-learn algorithm selection map."
     )
 
@@ -312,25 +338,25 @@ with tab7:
 
     st.markdown(
         """
-**Step 1 – Labelled data available**  
+**Step 1 – Labelled data available**
 The AED dataset contains a known breach outcome (breach / non-breach), therefore the
 problem is treated as **supervised learning**.
 
-**Step 2 – Predicting a category**  
+**Step 2 – Predicting a category**
 The objective is to predict whether a patient will breach the 4-hour target, which is
 a binary outcome. This leads to a **classification** task.
 
-**Step 3 – Dataset size consideration**  
+**Step 3 – Dataset size consideration**
 The dataset contains fewer than 100,000 observations, which allows the use of standard
 classification algorithms without scalability constraints.
 
-**Step 4 – Candidate algorithms**  
+**Step 4 – Candidate algorithms**
 Following the scikit-learn selection map, suitable methods include:
 - Logistic Regression (baseline linear classifier)
 - Decision Tree (interpretable non-linear model)
 - Ensemble classifiers such as Random Forest
 
-**Step 5 – Final model selection**  
+**Step 5 – Final model selection**
 Based on comparative evaluation metrics (precision, recall, F1-score, PR-AUC),
 the Decision Tree was selected as the final model due to its strong balance between
 breach detection performance and interpretability.
@@ -388,46 +414,116 @@ breach detection performance and interpretability.
             "is not a Decision Tree."
         )
 
+with tab8:
+    st.info(
+        """
+        **Task 7 – Decision Analytics Dashboard**: integrates the analytical outputs from All Tasks into a single interactive
+        interface, providing model transparency (algorithm selection rationale) and
+        downloadable outputs for further analysis and reporting.
+        """
+    )
+    # ---- Download ----
+    st.subheader("Downloads")
+    st.caption("CSV: scheduling results | ZIP: figures")
+    st.caption(
+        "- Review the machine learning model selection rationale\n"
+        "- Download CSV scheduling results (Tasks 1–3)\n"
+        "- Download figures generated from analytical tasks (Tasks 4–6)"
+    )
 
-# ---- Download ----
-st.divider()
-st.subheader("4. Downloads")
-st.caption("CSV: scheduling results | ZIP: figures")
+    with st.expander("Downloads", expanded=True):
 
-with st.expander("Downloads", expanded=True):
+        cols = st.columns(4)
+        i = 0
 
-    cols = st.columns(4)
-    i = 0
+        for r in results:
+            task_name = r.get("name", "Task")
+            safe_name = task_name.replace("/", "-")
 
-    for r in results:
-        task_name = r.get("name", "Task")
-        safe_name = task_name.replace("/", "-")
+            with cols[i % 4]:
 
-        with cols[i % 4]:
+                st.markdown(f"**{task_name}**")
 
-            st.markdown(f"**{task_name}**")
+                # ===== CSV download =====
+                csv_text = single_task_csv_text(r, days, wage)
+                if csv_text:
+                    st.download_button(
+                        label="⬇️ CSV",
+                        data=csv_text.encode("utf-8"),
+                        file_name=f"{safe_name}.csv",
+                        mime="text/csv",
+                        key=f"dl_csv_{safe_name}_{i}",
+                    )
 
-            # ===== CSV download =====
-            csv_text = single_task_csv_text(r, days, wage)
-            if csv_text:
-                st.download_button(
-                    label="⬇️ CSV",
-                    data=csv_text.encode("utf-8"),
-                    file_name=f"{safe_name}.csv",
-                    mime="text/csv",
-                    key=f"dl_csv_{safe_name}_{i}",
-                )
+                # ===== Figures download (ZIP) =====
+                figs = collect_task_figures(r)
+                if figs:
+                    zip_bytes = figures_zip_bytes(figs, dpi=200)
+                    st.download_button(
+                        label="🖼️ Figures (ZIP)",
+                        data=zip_bytes,
+                        file_name=f"{safe_name}_figures.zip",
+                        mime="application/zip",
+                        key=f"dl_fig_{safe_name}_{i}",
+                    )
 
-            # ===== Figures download (ZIP) =====
-            figs = collect_task_figures(r)
-            if figs:
-                zip_bytes = figures_zip_bytes(figs, dpi=200)
-                st.download_button(
-                    label="🖼️ Figures (ZIP)",
-                    data=zip_bytes,
-                    file_name=f"{safe_name}_figures.zip",
-                    mime="application/zip",
-                    key=f"dl_fig_{safe_name}_{i}",
-                )
+            i += 1
 
-        i += 1
+with tab9:
+    st.info(
+        "**Task 8 – Data Management Extension**: "
+        "extends the existing interactive decision support system by providing "
+        "basic data management (CRUD) capabilities for the AED dataset. "
+        "Users can retrieve, filter, modify, and remove patient records, "
+        "with all actions recorded in an audit log."
+    )
+
+    # ---- Patient lookup ----
+    st.subheader("1. Patient lookup")
+    show_patient_lookup()
+
+    st.divider()
+
+    # ---- Range filter ----
+    st.subheader("2. Range-based patient filter")
+    show_range_filter()
+
+    st.divider()
+
+    # ---- Modify / Delete ----
+    st.subheader("3. Modify or delete patient records")
+    show_modify_delete()
+
+    st.divider()
+
+    # ---- Audit log ----
+    st.subheader("4. Audit log")
+    show_audit_log()
+
+    st.divider()
+
+    # ---- Clear Audit log ----
+    st.subheader("5. Resets")
+    if st.button("Clear audit log"):
+        clear_audit_log()
+        st.session_state["audit_view_df"] = pd.DataFrame(
+            columns=["timestamp", "action", "patient_id", "detail"]
+        )
+        st.success("Audit log cleared.")
+        st.toast("Audit log cleared.")
+        st.rerun()
+
+    # ---- Reset Managed Data ----
+    st.subheader("⚠️ Reset Data")
+
+    confirm = st.checkbox(
+        "I understand this will discard all modifications and restore the original dataset."
+    )
+
+    if st.button("Reset data") and confirm:
+        try:
+            reset_managed_data()
+            st.success("Managed dataset has been reset to its original state.")
+            st.rerun()
+        except Exception as e:
+            st.error(str(e))
