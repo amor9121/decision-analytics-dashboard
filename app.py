@@ -19,7 +19,6 @@ from tasks.task8 import (
     reset_managed_data,
 )
 
-
 # ---- utils ----
 from utils.schedule_utils import build_schedule_summary, build_aed_summary
 from utils.render_utils import render_task_block, metric_row
@@ -32,9 +31,23 @@ from utils.state_utils import init_state
 # ---- path ----
 from pathlib import Path
 
+RAW = Path("data/AED4weeks.csv")
+MANAGED = Path("outputs/aed_managed.csv")
+
+# ---- Safety check: raw must exist ----
+if not RAW.exists():
+    st.error(f"Raw dataset not found: {RAW}")
+    st.stop()
+
+# ---- Initialise managed data (Cloud-safe) ----
+if not MANAGED.exists():
+    reset_managed_data()
+
+# ---- Now it is safe to initialise app state ----
+init_state(RAW, MANAGED)
+
+
 # ---- Run All ----
-
-
 @st.cache_data(show_spinner=True)
 def run_all_cached():
     # ---- Task 1 ----
@@ -86,10 +99,6 @@ def run_all_cached():
     # ---- Save ALL results once ----
     return [t1, t2s1, t2s2, t3, t4, t5, t6]
 
-
-RAW = Path("data/AED4Weeks.csv")
-MANAGED = Path("outputs/aed_managed.csv")
-init_state(RAW, MANAGED)
 
 # ---- Streamlit UI ----
 
