@@ -9,6 +9,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from sklearn.metrics import (
     confusion_matrix,
@@ -45,7 +46,17 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         )
         X = df.drop(columns=["Breachornot"])
 
-    X = X.drop(columns=[c for c in ["ID", "LoS"] if c in X.columns], errors="ignore")
+    # --- Drop leakage & non-deployable features
+    drop_cols = [
+        "ID",
+        "LoS",
+        "HRG",
+        "noofinvestigation",
+        "nooftreatment",
+        "Day",
+    ]
+
+    X = X.drop(columns=[c for c in drop_cols if c in X.columns], errors="ignore")
 
     # 1) Train–test split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -88,6 +99,9 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
 
     rows = []
     fitted = {}
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    forest_importance = None
+    forest_feature_names = None
 
     for name, clf in models.items():
         # Use no-scale preprocessing only for DecisionTree (readable thresholds)
@@ -96,6 +110,18 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         pipe = Pipeline([("prep", prep), ("model", clf)])
         pipe.fit(X_train, y_train)
         fitted[name] = pipe
+
+        if name == "RandomForest":
+            model = pipe.named_steps["model"]
+            prep = pipe.named_steps["prep"]
+
+            forest_importance = model.feature_importances_
+            forest_feature_names = prep.get_feature_names_out()
+
+        # Add cv
+        cv_score = cross_val_score(
+            pipe, X_train, y_train, cv=cv, scoring="balanced_accuracy", n_jobs=-1
+        ).mean()
 
         # 4) Score / evaluate models
         train_acc = pipe.score(X_train, y_train)
@@ -114,6 +140,7 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
                 "model": name,
                 "train_accuracy": train_acc,
                 "test_accuracy": test_acc,
+                "cv_accuracy": cv_score,
                 "balanced_accuracy": balanced_accuracy_score(y_test, y_pred),
                 "precision_breach": precision_score(y_test, y_pred, zero_division=0),
                 "recall_breach": recall_score(y_test, y_pred, zero_division=0),
@@ -195,6 +222,8 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
     return {
         "name": "Task 6",
         "summary": summary,
+        "forest_importance": forest_importance,
+        "forest_feature_names": forest_feature_names,
         "best_model_name": best_model,
         "plots": {
             "combined": fig,
@@ -209,5 +238,10 @@ if __name__ == "__main__":
 
     print("\n=== Task 6: Model comparison table ===")
     print(out["summary"].round(3))
+    imp = pd.Series(
+        out["forest_importance"], index=out["forest_feature_names"]
+    ).sort_values(ascending=False)
+
+    print(imp.head(5))
 
     plt.show()
