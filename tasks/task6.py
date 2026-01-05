@@ -1,6 +1,3 @@
-# Task 6 — Predict 4-hour breach (classification)
-# Creates: (1) Confusion Matrix Heatmap, (2) ROC Curve, (3) Logistic Coefficient Bar Chart
-
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -8,134 +5,209 @@ from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
+
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.ensemble import RandomForestClassifier
+
 from sklearn.metrics import (
     confusion_matrix,
-    classification_report,
-    roc_curve,
+    accuracy_score,
+    balanced_accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
     roc_auc_score,
+    RocCurveDisplay,
+    precision_recall_curve,
+    auc,
+    ConfusionMatrixDisplay,
 )
 
-try:
-    import seaborn as sns
-except ModuleNotFoundError:
-    sns = None
 
-# ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
-import sys
-from pathlib import Path
+def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.5):
+    """
+    Task 6: Apply supervised machine learning to predict breach vs non-breach
+    """
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-# =================================================
+    df = aed.copy()
 
-# ===== 1) Load data =====
-df = pd.read_csv("data/AED4weeks.csv")  # <- change path if needed
+    # Define target variable (breach vs non-breach)
+    if "Breach" in df.columns:
+        y = df["Breach"].astype(int)
+        X = df.drop(columns=["Breach"])
+    else:
+        y = (
+            df["Breachornot"]
+            .str.lower()
+            .map({"breach": 1, "non-breach": 0})
+            .astype(int)
+        )
+        X = df.drop(columns=["Breachornot"])
 
-# ===== 2) Define target and features =====
-# Target: Breach (True/False). If your file has only 'Breachornot', convert it.
-if "Breach" not in df.columns and "Breachornot" in df.columns:
-    df["Breach"] = df["Breachornot"].str.lower().eq("breach")
+    X = X.drop(columns=[c for c in ["ID", "LoS"] if c in X.columns], errors="ignore")
 
-y = df["Breach"].astype(int)
+    # 1) Train–test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state, stratify=y
+    )
 
-# IMPORTANT (avoid data leakage): Drop LoS (length of stay) because it determines breach after the fact.
-drop_cols = [c for c in ["ID", "Breachornot", "Breach", "LoS"] if c in df.columns]
-X = df.drop(columns=drop_cols)
+    # 2) Preprocessing (scale numeric + one-hot categorical)
+    cat_cols = X_train.select_dtypes(include=["object"]).columns.tolist()
+    num_cols = [c for c in X_train.columns if c not in cat_cols]
 
-# ===== 3) Split =====
-SEED = 20251229
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=SEED, stratify=y
-)
+    # Scaled (good for LogReg / often OK for RF)
+    preprocessor_scaled = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), num_cols),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+        ]
+    )
 
-# ===== 4) Preprocess =====
-# Separate numeric vs categorical automatically (safe default).
-num_cols = X.select_dtypes(
-    include=["int64", "float64", "int32", "float32"]
-).columns.tolist()
-cat_cols = [c for c in X.columns if c not in num_cols]
+    # No-scale (better interpretability for DecisionTree)
+    preprocessor_noscale = ColumnTransformer(
+        transformers=[
+            ("num", "passthrough", num_cols),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+        ]
+    )
 
-preprocess = ColumnTransformer(
-    transformers=[
-        ("num", StandardScaler(), num_cols),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-    ],
-    remainder="drop",
-)
+    # 3) Train machine learning models
+    models = {
+        "LogReg": LogisticRegression(max_iter=3000, class_weight="balanced"),
+        "DecisionTree": DecisionTreeClassifier(
+            max_depth=5, random_state=random_state, class_weight="balanced"
+        ),
+        "RandomForest": RandomForestClassifier(
+            n_estimators=300,
+            random_state=random_state,
+            class_weight="balanced",
+            n_jobs=-1,
+        ),
+    }
 
-# ===== 5) Model =====
-# class_weight="balanced" helps if breaches are rarer than non-breaches.
-model = LogisticRegression(max_iter=2000, class_weight="balanced")
+    rows = []
+    fitted = {}
 
-clf = Pipeline(steps=[("prep", preprocess), ("model", model)])
+    for name, clf in models.items():
+        # Use no-scale preprocessing only for DecisionTree (readable thresholds)
+        prep = preprocessor_noscale if name == "DecisionTree" else preprocessor_scaled
 
-clf.fit(X_train, y_train)
+        pipe = Pipeline([("prep", prep), ("model", clf)])
+        pipe.fit(X_train, y_train)
+        fitted[name] = pipe
 
-# ===== 6) Predict + metrics =====
-y_pred = clf.predict(X_test)
-y_prob = clf.predict_proba(X_test)[:, 1]  # probability of breach
+        # 4) Score / evaluate models
+        train_acc = pipe.score(X_train, y_train)
+        test_acc = pipe.score(X_test, y_test)
 
-print("\n=== Classification report ===")
-print(classification_report(y_test, y_pred, target_names=["Non-breach", "Breach"]))
+        y_prob = pipe.predict_proba(X_test)[:, 1]
+        y_pred = (y_prob >= threshold).astype(int)
 
-auc = roc_auc_score(y_test, y_prob)
-print(f"ROC-AUC: {auc:.3f}")
+        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
 
-# ===== 7) Plot 1: Confusion Matrix Heatmap =====
-cm = confusion_matrix(y_test, y_pred)
+        pr_p, pr_r, _ = precision_recall_curve(y_test, y_prob)
+        pr_auc = auc(pr_r, pr_p)
 
-plt.figure(figsize=(5, 4))
-sns.heatmap(
-    cm,
-    annot=True,
-    fmt="d",
-    cmap="Blues",
-    xticklabels=["Non-breach", "Breach"],
-    yticklabels=["Non-breach", "Breach"],
-)
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
-plt.title("Confusion Matrix (Logistic Regression)")
-plt.tight_layout()
-plt.show()
+        rows.append(
+            {
+                "model": name,
+                "train_accuracy": train_acc,
+                "test_accuracy": test_acc,
+                "balanced_accuracy": balanced_accuracy_score(y_test, y_pred),
+                "precision_breach": precision_score(y_test, y_pred, zero_division=0),
+                "recall_breach": recall_score(y_test, y_pred, zero_division=0),
+                "f1_breach": f1_score(y_test, y_pred, zero_division=0),
+                "roc_auc": roc_auc_score(y_test, y_prob),
+                "pr_auc": pr_auc,
+                "tn": tn,
+                "fp": fp,
+                "fn": fn,
+                "tp": tp,
+            }
+        )
 
-# ===== 8) Plot 2: ROC Curve =====
-fpr, tpr, thresholds = roc_curve(y_test, y_prob)
+    summary = (
+        pd.DataFrame(rows).set_index("model").sort_values("pr_auc", ascending=False)
+    )
 
-plt.figure(figsize=(6, 4))
-plt.plot(fpr, tpr, label=f"Logistic Regression (AUC={auc:.3f})")
-plt.plot([0, 1], [0, 1], linestyle="--", label="Random")
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curve")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    best_model = summary.index[0]
+    best_pipe = fitted[best_model]
 
-# ===== 9) Plot 3: Coefficient bar chart (top factors) =====
-# Get feature names after preprocessing
-prep = clf.named_steps["prep"]
-ohe = prep.named_transformers_["cat"]
+    # --- Decision Tree visualisation (readable)
+    if best_model == "DecisionTree":
+        tree_model = best_pipe.named_steps["model"]
+        prep_used = best_pipe.named_steps["prep"]
 
-# Numeric feature names stay the same; categorical expand via one-hot
-cat_feature_names = []
-if len(cat_cols) > 0:
-    cat_feature_names = ohe.get_feature_names_out(cat_cols).tolist()
+        feature_names = prep_used.get_feature_names_out()
+        # shorten feature names for readability
+        feature_names = [
+            f.replace("num__", "").replace("cat__", "") for f in feature_names
+        ]
 
-feature_names = num_cols + cat_feature_names
+        fig_tree, ax_tree = plt.subplots(figsize=(20, 10))
+        plot_tree(
+            tree_model,
+            feature_names=feature_names,
+            class_names=["Non-breach", "Breach"],
+            filled=True,
+            rounded=True,
+            max_depth=2,
+            fontsize=10,
+            ax=ax_tree,
+            impurity=False,
+        )
+        ax_tree.set_title("Decision Tree (Top Levels)")
+        fig_tree.tight_layout()
+    else:
+        fig_tree = None
 
-coefs = clf.named_steps["model"].coef_.ravel()
-coef_df = pd.DataFrame({"feature": feature_names, "coef": coefs})
-coef_df["abs_coef"] = coef_df["coef"].abs()
+    # Visual evaluation (confusion matrix, ROC curves, PR curves)
+    y_prob_best = best_pipe.predict_proba(X_test)[:, 1]
+    y_pred_best = (y_prob_best >= threshold).astype(int)
+    cm_best = confusion_matrix(y_test, y_pred_best)
 
-top = coef_df.sort_values("abs_coef", ascending=False).head(15).sort_values("coef")
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
 
-plt.figure(figsize=(8, 5))
-plt.barh(top["feature"], top["coef"])
-plt.axvline(0, linewidth=1)
-plt.title("Top 15 Logistic Regression Coefficients (Breach = 1)")
-plt.xlabel("Coefficient (positive = higher breach risk)")
-plt.tight_layout()
-plt.show()
+    ConfusionMatrixDisplay(cm_best, display_labels=["Non-breach", "Breach"]).plot(
+        ax=axes[0, 0], values_format="d", colorbar=False
+    )
+    axes[0, 0].set_title(f"(A) Confusion Matrix: {best_model}")
+
+    ax = axes[0, 1]
+    for name, pipe in fitted.items():
+        RocCurveDisplay.from_estimator(pipe, X_test, y_test, name=name, ax=ax)
+    ax.set_title("(B) ROC Curves (All Models)")
+
+    ax = axes[1, 0]
+    for name, pipe in fitted.items():
+        y_prob = pipe.predict_proba(X_test)[:, 1]
+        pr_p, pr_r, _ = precision_recall_curve(y_test, y_prob)
+        ax.plot(pr_r, pr_p, label=name)
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title("(C) Precision–Recall Curves (All Models)")
+    ax.legend()
+
+    axes[1, 1].axis("off")
+    fig.tight_layout()
+
+    return {
+        "name": "Task 6",
+        "summary": summary,
+        "best_model_name": best_model,
+        "plots": {
+            "combined": fig,
+            "decision_tree": fig_tree,
+        },
+    }
+
+
+if __name__ == "__main__":
+    aed = pd.read_csv("data/AED4weeks.csv")
+    out = solve_task6(aed)
+
+    print("\n=== Task 6: Model comparison table ===")
+    print(out["summary"].round(3))
+
+    plt.show()

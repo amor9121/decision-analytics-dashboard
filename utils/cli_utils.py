@@ -1,127 +1,150 @@
+from sklearn.metrics import confusion_matrix
+import pandas as pd
+
+
+def print_task1_2(r: dict, days, wage):
+    print("\n[Tasks 1–2] Scheduling & cost scenarios")
+
+    if r.get("status") is not None:
+        print("Status:", r.get("status"))
+
+    if r.get("cost") is not None:
+        print("Total cost (£):", r.get("cost"))
+
+    if r.get("cost_increase_pct") is not None:
+        print("Cost increase (%):", r.get("cost_increase_pct"))
+
+    allocation = r.get("allocation")
+    if allocation is not None:
+        table = allocation.copy()
+
+        table["Weekly Total"] = table[days].sum(axis=1)
+        table["Hourly Wage (£)"] = table.index.map(lambda i: wage.get(i, ""))
+        table["Weekly Wage (£)"] = table.index.map(
+            lambda i: (table.loc[i, "Weekly Total"] * wage[i]) if i in wage else ""
+        )
+
+        daily = table[days].sum(axis=0)
+        daily["Weekly Total"] = table["Weekly Total"].sum()
+        daily["Hourly Wage (£)"] = ""
+        daily["Weekly Wage (£)"] = table["Weekly Wage (£)"].sum()
+
+        table.loc["Daily Total"] = daily
+        table = table.round(2)
+
+        print("\nFinal schedule table:")
+        print(table)
+
+
+def print_task3(r: dict):
+    print("\n[Task 3] Optimisation & coverage")
+
+    if r.get("gap") is not None:
+        print("Fairness gap:", r.get("gap"))
+
+    if r.get("skill_coverage") is not None:
+        print("\nSkill coverage per day:")
+        for d, cov in r["skill_coverage"].items():
+            print(
+                f"{d}: Programming={cov['Programming']:.2f}, "
+                f"Troubleshooting={cov['Troubleshooting']:.2f}"
+            )
+
+
+def print_task4(r: dict):
+    print("\n[Task 4] Descriptive analysis")
+
+    if r.get("breach_rate_pct") is not None:
+        print("Breach rate (%):", r.get("breach_rate_pct"))
+
+    if r.get("breach_counts") is not None:
+        print("\nBreach counts:")
+        print(r["breach_counts"])
+
+    if r.get("kpi_table") is not None:
+        print("\nKPI table:")
+        print(r["kpi_table"])
+
+    if r.get("age_summary") is not None:
+        print("\nAge summary:")
+        print(r["age_summary"])
+
+    if r.get("los_summary") is not None:
+        print("\nLoS summary:")
+        print(r["los_summary"])
+
+    if r.get("summary") is not None:
+        print("\nSummary text:")
+        print(r["summary"])
+
+
+def print_task5(r: dict):
+    print("\n[Task 5] Statistical analysis")
+
+    if r.get("stats") is not None:
+        print("\nStats:")
+        for k, v in r["stats"].items():
+            print(f"- {k}: {v}")
+
+    if r.get("tables") is not None:
+        print("\nTables:")
+        for name, t in r["tables"].items():
+            print(f"\n{name}:")
+            print(t)
+
+    if r.get("figures") is not None:
+        print("\nFigures generated (see plots)")
+
+
+def print_task6(r: dict):
+    print("\n[Task 6] Breach prediction (ML)")
+
+    metrics = r.get("summary")
+    if not isinstance(metrics, pd.DataFrame):
+        metrics = r.get("metrics")
+
+    if metrics is not None:
+        print("\nModel comparison table:")
+        print(metrics.round(3))
+
+    final_model = r.get("final_model") or r.get("best_model_name")
+    if final_model is not None:
+        print("\nFinal model:", final_model)
+
+    if r.get("notes") is not None:
+        print("\nNotes:")
+        for k, v in r["notes"].items():
+            print(f"- {k}: {v}")
+
+    td = r.get("test_data", {})
+    if "y_test" in td and "y_pred_best" in td:
+        cm = confusion_matrix(td["y_test"], td["y_pred_best"])
+        print("\nConfusion Matrix [ [TN FP], [FN TP] ]:")
+        print(cm)
+
+    if r.get("plots") is not None:
+        print("\nPlots:", ", ".join(r["plots"].keys()))
+
+
 def print_results(results, days, wage):
     for r in results:
-        name = r.get("name", "Scenario")
-
         print("\n" + "=" * 90)
-        print(name)
+        print(r.get("name", "Result"))
         print("=" * 90)
 
-        # ---- Common summary ----
-        if "status" in r:
-            print("Status:", r.get("status"))
+        name = r.get("name", "")
 
-        if r.get("cost") is not None:
-            print("Total cost (£):", r.get("cost"))
+        if name in ["Task 1", "Task 2", "Task 2 - Scenario 1", "Task 2 - Scenario 2"]:
+            print_task1_2(r, days, wage)
 
-        if r.get("cost_increase_pct") is not None:
-            print("Cost increase (%):", r.get("cost_increase_pct"))
+        elif name == "Task 3":
+            print_task3(r)
 
-        if r.get("gap") is not None:
-            print("Fairness gap:", r.get("gap"))
+        elif name == "Task 4":
+            print_task4(r)
 
-        # ---- AED Task 4: descriptive outputs ----
-        if (
-            r.get("age_summary") is not None
-            or r.get("los_summary") is not None
-            or r.get("kpi_table") is not None
-            or r.get("breach_counts") is not None
-        ):
-            print("\n[AED Task 4] Key outputs")
+        elif name == "Task 5":
+            print_task5(r)
 
-            if r.get("breach_rate_pct") is not None:
-                print("Breach rate (%):", r.get("breach_rate_pct"))
-
-            if r.get("breach_counts") is not None:
-                print("\nBreach counts:")
-                print(r["breach_counts"])
-
-            if r.get("kpi_table") is not None:
-                print("\nKPI table:")
-                print(r["kpi_table"])
-
-            if r.get("age_summary") is not None:
-                print("\nAge summary:")
-                print(r["age_summary"])
-
-            if r.get("los_summary") is not None:
-                print("\nLoS summary:")
-                print(r["los_summary"])
-
-            if r.get("summary") is not None:
-                print("\nSummary text:")
-                print(r["summary"])
-
-            if r.get("fig1") is not None or r.get("fig2") is not None:
-                print(
-                    "\nFigures: fig1/fig2 generated (view in Streamlit or save them)."
-                )
-
-        # ---- AED Task 5: statistical outputs ----
-        if (
-            r.get("stats") is not None
-            or r.get("tables") is not None
-            or r.get("figures") is not None
-        ):
-            print("\n[AED Task 5] Key outputs")
-
-            stats = r.get("stats", {})
-            if stats:
-                print("\nStats:")
-                for k, v in stats.items():
-                    print(f"- {k}: {v}")
-
-            tables = r.get("tables", {})
-            if tables:
-                print("\nTables:")
-                for tname, tval in tables.items():
-                    print(f"\n{tname}:")
-                    print(tval)
-
-            figs = r.get("figures")
-            if figs is not None:
-                try:
-                    print(
-                        f"\nFigures generated: {len(figs)} (view in Streamlit / save as images)"
-                    )
-                except Exception:
-                    print("\nFigures generated (view in Streamlit / save as images)")
-
-        # ---- Skill coverage (Task 3) ----
-        if r.get("skill_coverage") is not None:
-            print("\nSkill coverage per day (should be >=6 each):")
-            for d, cov in r["skill_coverage"].items():
-                print(
-                    f"{d}: Programming={cov['Programming']:.2f}, "
-                    f"Troubleshooting={cov['Troubleshooting']:.2f}"
-                )
-
-        # ---- Scheduling table (Task 1–3 / Task 2 scenarios) ----
-        allocation = r.get("allocation")
-        if allocation is not None:
-            final_table = allocation.copy()
-
-            final_table["Weekly Total"] = final_table[days].sum(axis=1)
-            final_table["Hourly Wage (£)"] = final_table.index.map(
-                lambda i: wage.get(i, "")
-            )
-            final_table["Weekly Wage (£)"] = final_table.index.map(
-                lambda i: (
-                    (final_table.loc[i, "Weekly Total"] * wage[i]) if i in wage else ""
-                )
-            )
-
-            daily_total = final_table[days].sum(axis=0)
-            daily_total["Weekly Total"] = final_table["Weekly Total"].sum()
-            daily_total["Hourly Wage (£)"] = ""
-            daily_total["Weekly Wage (£)"] = final_table["Weekly Wage (£)"].sum()
-
-            final_table.loc["Daily Total"] = daily_total
-            final_table = final_table.round(2)
-
-            print("\nFinal Schedule Table:")
-            print(final_table)
-
-            print(
-                f"\nTotal weekly operational hours: "
-                f"{final_table.loc['Daily Total', 'Weekly Total']}"
-            )
+        elif name == "Task 6":
+            print_task6(r)

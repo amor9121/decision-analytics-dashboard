@@ -1,3 +1,5 @@
+import pandas as pd
+
 # =========================
 # Shared sets & parameters
 # =========================
@@ -41,3 +43,6 @@ for i in ["E.Khan", "Y.Chen", "R.Perez", "C.Santos"]:
 
 for i in ["A.Taylor", "R.Zidane", "C.Santos"]:
     s[(i, "Troubleshooting")] = 1
+
+# dataframe
+aed = pd.read_csv("data/AED4weeks.csv")

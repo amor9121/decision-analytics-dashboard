@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 
 # ---- tasks ----
-from core.data import days, wage
+from core.data import days, wage, aed
 from tasks.task1 import solve_task1
 from tasks.task2_s1 import solve_task2_s1
 from tasks.task2_s2 import solve_task2_s2
 from tasks.task3 import solve_task3
 from tasks.task4 import solve_task4
 from tasks.task5 import solve_task5
+from tasks.task6 import solve_task6
 
 # ---- utils ----
 from utils.schedule_utils import build_schedule_summary, build_aed_summary
@@ -16,6 +17,7 @@ from utils.render_utils import render_task_block, metric_row
 from utils.result_utils import ensure_task_row
 from utils.export_utils import single_task_csv_text
 from utils.figure_utils import collect_task_figures, figures_zip_bytes
+from utils.data_tidy import show_tidy_summary_expander
 
 
 # ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
@@ -101,13 +103,9 @@ if run_all:
     t5["download_df"] = t5.get("download_df", pd.DataFrame())
 
     # ---- Task 6 ----
-    t6 = {
-        "name": "Task 6",
-        "case": "Prediction (ML)",
-        "status": "Pending",
-        "allocation": None,
-        "download_df": pd.DataFrame(),
-    }
+    t6 = ensure_task_row(solve_task6(aed), "Task 6")
+    t6["case"] = "Prediction (ML)"
+    t6["download_df"] = t6.get("summary", pd.DataFrame())
 
     # ---- Save ALL results once ----
     st.session_state["results"] = [t1, t2s1, t2s2, t3, t4, t5, t6]
@@ -237,6 +235,12 @@ with tab5:
         st.warning("los_summary not available.")
 
     st.divider()
+    # ---- Data tidying checks ----
+    show_tidy_summary_expander(
+        r.get("tidy_summary"), title="Data tidying checks (AED dataset)", expanded=False
+    )
+
+    st.divider()
 
     # ---- Figures ----
     st.subheader("Figure 1 – Core relationships")
@@ -287,8 +291,103 @@ with tab6:
     st.subheader("Figure 5.1 – Key factors associated with breaches")
     st.pyplot(r["figures"]["fig1"], clear_figure=False)
 
+with tab7:
+    st.info(
+        "This section explains how suitable machine learning algorithms were selected "
+        "for Task 6 using the scikit-learn algorithm selection map."
+    )
 
-# ---- Download ----
+    st.subheader("Algorithm selection rationale (scikit-learn map)")
+
+    # ---- Just show the image ----
+    st.image(
+        "assets/ml_map.png",
+        caption="Scikit-learn algorithm selection map",
+        width=900,
+    )
+
+    st.divider()
+
+    st.subheader("How the final models were chosen")
+
+    st.markdown(
+        """
+**Step 1 – Labelled data available**  
+The AED dataset contains a known breach outcome (breach / non-breach), therefore the
+problem is treated as **supervised learning**.
+
+**Step 2 – Predicting a category**  
+The objective is to predict whether a patient will breach the 4-hour target, which is
+a binary outcome. This leads to a **classification** task.
+
+**Step 3 – Dataset size consideration**  
+The dataset contains fewer than 100,000 observations, which allows the use of standard
+classification algorithms without scalability constraints.
+
+**Step 4 – Candidate algorithms**  
+Following the scikit-learn selection map, suitable methods include:
+- Logistic Regression (baseline linear classifier)
+- Decision Tree (interpretable non-linear model)
+- Ensemble classifiers such as Random Forest
+
+**Step 5 – Final model selection**  
+Based on comparative evaluation metrics (precision, recall, F1-score, PR-AUC),
+the Decision Tree was selected as the final model due to its strong balance between
+breach detection performance and interpretability.
+        """
+    )
+
+    # ---- Task 6 summary table ----
+    st.divider()
+    st.subheader("Model comparison table")
+
+    t6 = by_name.get("Task 6")
+    if t6 is None:
+        t6 = results[6] if len(results) > 6 else {}
+
+    metrics = t6.get("summary")
+    if metrics is None:
+        metrics = t6.get("metrics")
+
+    if metrics is not None:
+        st.dataframe(metrics, use_container_width=True)
+    else:
+        st.warning("Task 6 metrics table not available.")
+    st.divider()
+
+    st.subheader("Model evaluation figure")
+
+    t6 = by_name.get("Task 6")
+    if t6 is None:
+        t6 = results[6] if len(results) > 6 else {}
+
+    plots = t6.get("plots", {})
+
+    if plots.get("combined") is not None:
+        st.pyplot(plots["combined"], clear_figure=True)
+    else:
+        st.warning(
+            "Combined figure not available. "
+            "Check that solve_task6() creates plots['combined']."
+        )
+    # ---- Decision Tree visualisation ----
+    st.divider()
+    st.subheader("Decision Tree")
+
+    plots = t6.get("plots", {})
+
+    if plots.get("decision_tree") is not None:
+        st.pyplot(plots["decision_tree"], clear_figure=True)
+        st.caption(
+            "Top levels of the Decision Tree are shown for interpretability. "
+            "Each split indicates how patient characteristics contribute to breach prediction."
+        )
+    else:
+        st.info(
+            "Decision Tree visualisation is not shown because the selected best model "
+            "is not a Decision Tree."
+        )
+
 
 # ---- Download ----
 st.divider()
@@ -297,14 +396,14 @@ st.caption("CSV: scheduling results | ZIP: figures")
 
 with st.expander("Downloads", expanded=True):
 
-    cols = st.columns(3)  # 每列 3 個 task
+    cols = st.columns(4)
     i = 0
 
     for r in results:
         task_name = r.get("name", "Task")
         safe_name = task_name.replace("/", "-")
 
-        with cols[i % 3]:
+        with cols[i % 4]:
 
             st.markdown(f"**{task_name}**")
 

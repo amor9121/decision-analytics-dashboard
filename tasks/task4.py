@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from utils.data_tidy import tidy_aed_data
 
 
 # -----------------------------
@@ -8,11 +9,16 @@ import seaborn as sns
 # -----------------------------
 def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
 
+    # load data
     aed = pd.read_csv(csv_path)
     aed.columns = aed.columns.str.strip()
-
     sample = aed.sample(n=n, random_state=seed).copy()
 
+    # data tidying check
+    aed, tidy_summary = tidy_aed_data(aed)
+
+    # preproccesing
+    # [P1]Numeric type coercion
     numeric_cols = [
         "Age",
         "Day",
@@ -26,15 +32,17 @@ def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
         if col in sample.columns:
             sample[col] = pd.to_numeric(sample[col], errors="coerce")
 
+    # [P2] Outcome variable preprocessing (binary encoding)
     breach_str = sample["Breachornot"].astype(str).str.lower()
     sample["is_breach"] = breach_str.str.contains("breach") & ~breach_str.str.contains(
         "non"
     )
-
+    # [P3] Feature engineering: clinical complexity proxy
     sample["clinical_complexity"] = sample["noofinvestigation"].fillna(0) + sample[
         "nooftreatment"
     ].fillna(0)
 
+    # descriptive summaries
     age_summary = sample[["Age"]].describe()
     los_summary = sample[["LoS"]].describe()
     breach_counts = sample["Breachornot"].value_counts(dropna=False)
@@ -55,6 +63,7 @@ def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
         .rename(index={False: "Non-breach", True: "Breach"})
     )
 
+    # visualization
     # Figure 1
     fig1, axes = plt.subplots(2, 2, figsize=(14, 11))
 
@@ -144,6 +153,7 @@ def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
         "case": "AED descriptive analysis (random sample n=400)",
         "allocation": None,
         "sample": sample,
+        "tidy_summary": tidy_summary,
         "age_summary": age_summary,
         "los_summary": los_summary,
         "breach_counts": breach_counts,
