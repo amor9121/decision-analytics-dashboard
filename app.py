@@ -23,7 +23,11 @@ from tasks.task8 import (
 from utils.schedule_utils import build_schedule_summary, build_aed_summary
 from utils.render_utils import render_task_block, metric_row
 from utils.result_utils import ensure_task_row
-from utils.export_utils import single_task_csv_text
+from utils.export_utils import (
+    single_task_csv_text,
+    task_bundle_zip_bytes,
+    all_tasks_zip_bytes,
+)
 from utils.figure_utils import collect_task_figures, figures_zip_bytes
 from utils.data_tidy import show_tidy_summary_expander
 from utils.state_utils import init_state
@@ -308,22 +312,22 @@ with tab6:
     r = by_name.get("Task 5") or results[5]
 
     # --- Tables
-    st.subheader("Table 5.1 – Prolonged stay & key KPIs")
+    st.subheader("Prolonged stay & key KPIs")
     st.dataframe(r["tables"]["table_5_1"], use_container_width=True)
 
-    st.subheader("Table 5.2 – Numeric variables vs Breach")
+    st.subheader("Numeric variables vs Breach")
     st.dataframe(r["tables"]["table_5_2"], use_container_width=True)
 
-    st.subheader("Table 5.3 – Categorical variables vs Breach")
+    st.subheader("Categorical variables vs Breach")
     st.dataframe(r["tables"]["table_5_3"], use_container_width=True)
 
     st.divider()
 
     # --- Figures
-    st.subheader("Figure 5.0 – Overview of breach context")
+    st.subheader("Overview of breach context")
     st.pyplot(r["figures"]["fig0"], clear_figure=False)
 
-    st.subheader("Figure 5.1 – Key factors associated with breaches")
+    st.subheader("Key factors associated with breaches")
     st.pyplot(r["figures"]["fig1"], clear_figure=False)
 
 with tab7:
@@ -335,10 +339,11 @@ with tab7:
     st.subheader("Algorithm selection rationale (scikit-learn map)")
 
     # ---- Just show the image ----
+    left, center, right = st.columns([1, 8, 1])
     st.image(
         "assets/ml_map.png",
         caption="Scikit-learn algorithm selection map",
-        width=900,
+        use_container_width=True,
     )
 
     st.divider()
@@ -399,7 +404,7 @@ breach detection performance and interpretability.
     plots = t6.get("plots", {})
 
     if plots.get("combined") is not None:
-        st.pyplot(plots["combined"], clear_figure=True)
+        st.pyplot(plots["combined"])
     else:
         st.warning(
             "Combined figure not available. "
@@ -412,7 +417,7 @@ breach detection performance and interpretability.
     plots = t6.get("plots", {})
 
     if plots.get("decision_tree") is not None:
-        st.pyplot(plots["decision_tree"], clear_figure=True)
+        st.pyplot(plots["decision_tree"])
         st.caption(
             "Top levels of the Decision Tree are shown for interpretability. "
             "Each split indicates how patient characteristics contribute to breach prediction."
@@ -431,13 +436,23 @@ with tab8:
         downloadable outputs for further analysis and reporting.
         """
     )
+    st.markdown(
+        """
+        🧩 **About Task 7:**
+
+        Task 7 focuses on integrating and operationalising the results from Tasks 1–6.  
+        Downloaded outputs can be used for further analysis, reporting, and decision support outside this dashboard.
+        """
+    )
+
     # ---- Download ----
     st.subheader("Downloads")
-    st.caption("CSV: scheduling results | ZIP: figures")
+    st.caption("ZIP: all task outputs (schedule + figures + metrics)")
     st.caption(
-        "- Review the machine learning model selection rationale\n"
-        "- Download CSV scheduling results (Tasks 1–3)\n"
-        "- Download figures generated from analytical tasks (Tasks 4–6)"
+        "- Download each task as a single ZIP bundle\n"
+        "- Tasks 1–3 include schedule.csv\n"
+        "- Tasks 4–6 include figures.zip\n"
+        "- All tasks include metrics.json"
     )
 
     with st.expander("Downloads", expanded=True):
@@ -447,36 +462,62 @@ with tab8:
 
         for r in results:
             task_name = r.get("name", "Task")
-            safe_name = task_name.replace("/", "-")
+            safe_name = (
+                task_name.replace("/", "-")
+                .replace("\\", "-")
+                .replace(":", "-")
+                .replace("|", "-")
+            )
 
             with cols[i % 4]:
-
                 st.markdown(f"**{task_name}**")
 
-                # ===== CSV download =====
+                # ===== All results bundle (ZIP) =====
+                bundle_bytes = task_bundle_zip_bytes(r, days, wage, dpi=200)
+                st.download_button(
+                    label="📦 All results (ZIP)",
+                    data=bundle_bytes,
+                    file_name=f"{safe_name}_all_results.zip",
+                    mime="application/zip",
+                    key=f"dl_all_{safe_name}_{i}",
+                    use_container_width=True,
+                )
+
+                # ===== (Optional) keep single-file downloads =====
                 csv_text = single_task_csv_text(r, days, wage)
                 if csv_text:
                     st.download_button(
-                        label="⬇️ CSV",
+                        label="⬇️ Schedule (CSV)",
                         data=csv_text.encode("utf-8"),
                         file_name=f"{safe_name}.csv",
                         mime="text/csv",
                         key=f"dl_csv_{safe_name}_{i}",
+                        use_container_width=True,
                     )
 
-                # ===== Figures download (ZIP) =====
                 figs = collect_task_figures(r)
                 if figs:
                     zip_bytes = figures_zip_bytes(figs, dpi=200)
                     st.download_button(
-                        label="🖼️ Figures (ZIP)",
+                        label="🖼️ Figures only (ZIP)",
                         data=zip_bytes,
                         file_name=f"{safe_name}_figures.zip",
                         mime="application/zip",
                         key=f"dl_fig_{safe_name}_{i}",
+                        use_container_width=True,
                     )
 
             i += 1
+
+        zip_all = all_tasks_zip_bytes(results, days, wage, dpi=200)
+        st.download_button(
+            label="📦 Download EVERYTHING (ZIP)",
+            data=zip_all,
+            file_name="decision_analytics_all_results.zip",
+            mime="application/zip",
+            key="dl_everything_zip",
+            use_container_width=True,
+        )
 
 with tab9:
     st.info(
@@ -488,51 +529,74 @@ with tab9:
     )
 
     # ---- Patient lookup ----
-    st.subheader("1. Patient lookup")
+    st.subheader("Patient lookup")
     show_patient_lookup()
 
     st.divider()
 
     # ---- Range filter ----
-    st.subheader("2. Range-based patient filter")
+    st.subheader("Range-based patient filter")
     show_range_filter()
 
     st.divider()
 
     # ---- Modify / Delete ----
-    st.subheader("3. Modify or delete patient records")
+    st.subheader("Modify or delete patient records")
     show_modify_delete()
 
     st.divider()
 
     # ---- Audit log ----
-    st.subheader("4. Audit log")
+    st.subheader("Audit log")
     show_audit_log()
 
     st.divider()
 
-    # ---- Clear Audit log ----
-    st.subheader("5. Resets")
-    if st.button("Clear audit log"):
-        clear_audit_log()
-        st.session_state["audit_view_df"] = pd.DataFrame(
-            columns=["timestamp", "action", "patient_id", "detail"]
-        )
-        st.success("Audit log cleared.")
-        st.toast("Audit log cleared.")
-        st.rerun()
+    st.subheader("Resets")
 
-    # ---- Reset Managed Data ----
-    st.subheader("⚠️ Reset Data")
+    # ---- Reset Audit Log (toggle -> warning -> confirm) ----
+    st.subheader("⚠️ Reset Audit Log")
 
-    confirm = st.checkbox(
-        "I understand this will discard all modifications and restore the original dataset."
+    audit_reset_toggle = st.toggle(
+        "Enable audit log reset (this will delete the audit history)",
+        key="audit_reset_toggle",
     )
 
-    if st.button("Reset data") and confirm:
-        try:
-            reset_managed_data()
-            st.success("Managed dataset has been reset to its original state.")
-            st.rerun()
-        except Exception as e:
-            st.error(str(e))
+    if audit_reset_toggle:
+        st.warning("This action cannot be undone.")
+
+        if st.button("Confirm clear audit log", key="confirm_clear_audit_log"):
+            try:
+                clear_audit_log()
+
+                # reset the on-screen dataframe too
+                st.session_state["audit_view_df"] = pd.DataFrame(
+                    columns=["timestamp", "action", "patient_id", "detail"]
+                )
+
+                st.success("Audit log cleared.")
+                st.toast("Audit log cleared.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+
+    st.divider()
+
+    # ---- Reset Managed Data (toggle -> warning -> confirm) ----
+    st.subheader("⚠️ Reset Data")
+
+    reset_toggle = st.toggle(
+        "Enable data reset (this will discard all modifications)",
+        key="data_reset_toggle",
+    )
+
+    if reset_toggle:
+        st.warning("This action cannot be undone.")
+
+        if st.button("Confirm reset", key="confirm_reset_data"):
+            try:
+                reset_managed_data()
+                st.success("Managed dataset has been reset to its original state.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
