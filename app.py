@@ -108,26 +108,27 @@ def run_all_cached():
 st.set_page_config(page_title="Decision Analytics Dashboard", layout="wide")
 st.title("Decision Analytics Dashboard")
 
-st.markdown(
+with st.expander("What this app does", expanded=True):
+    st.markdown(
+        """
+    **What this app does**:
+    - **Task 1**: Baseline cost-minimising schedule (LP).
+    - **Task 2 – Scenario 1**: Minimise workload inequality **subject to ≤ 1.8% cost increase**.
+    - **Task 2 – Scenario 2**: Find the **fairest** possible schedule, then minimise cost (two-stage).
+    - **Task 3**: Add **skill constraints** (≥ 6 hours per skill per day) and report feasibility/cost
+    - **Task 4**: Analyse a random sample of AED patient data to understand workload, patient flow, and breaches.
+    - **Task 5**: Use **statistical analysis** to investigate factors contributing to breaches or prolonged stays.
+    - **Task 6**: Apply **machine learning** to predict whether a patient will breach the 4-hour target.
+    - **Task 7**: The Streamlit dashboard provides interactive access to all analyses from Tasks 1–8.
+    - **Task 8 Extension**: Additional data management capabilities (patient lookup, range filtering, modify/delete with logging) are integrated into the same interface.
     """
-**What this app does**
-- **Task 1**: Baseline cost-minimising schedule (LP).
-- **Task 2 – Scenario 1**: Minimise workload inequality **subject to ≤ 1.8% cost increase**.
-- **Task 2 – Scenario 2**: Find the **fairest** possible schedule, then minimise cost (two-stage).
-- **Task 3**: Add **skill constraints** (≥ 6 hours per skill per day) and report feasibility/cost
-- **Task 4**: Analyse a random sample of AED patient data to understand workload, patient flow, and breaches.
-- **Task 5**: Use **statistical analysis** to investigate factors contributing to breaches or prolonged stays.
-- **Task 6**: Apply **machine learning** to predict whether a patient will breach the 4-hour target.
-- **Task 7**: The Streamlit dashboard provides interactive access to all analyses from Tasks 1–8.
-- **Task 8 Extension**: Additional data management capabilities (patient lookup, range filtering, modify/delete with logging) are integrated into the same interface.
-"""
-)
+    )
 
 # Keep results in session_state (use empty list to avoid NoneType errors)
 if "results" not in st.session_state:
     st.session_state["results"] = None
 
-c1, c_spacer, c2 = st.columns([1, 3, 1])
+c1, c_spacer, c2 = st.columns([1, 4, 1])
 
 with c1:
     run_all = st.button("Run Tasks", type="primary")
@@ -157,6 +158,8 @@ else:
 schedule_summary_df = build_schedule_summary(results)
 aed_summary_df = build_aed_summary(results)
 
+st.header("Summary")
+st.caption("Overview of optimisation and analytics results for comparison.")
 st.subheader("1. Scheduling Optimisation Summary (Tasks 1–3)")
 st.dataframe(schedule_summary_df, use_container_width=True, hide_index=True)
 
@@ -166,7 +169,8 @@ st.dataframe(aed_summary_df, use_container_width=True, hide_index=True)
 
 # ---- Tabs ----
 
-st.subheader("3. Results")
+st.header("Task Results")
+st.caption("Select a task below to view detailed results.")
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
     [
         "Task 1",
@@ -456,6 +460,17 @@ with tab8:
 
     with st.expander("Downloads", expanded=True):
 
+        st.markdown(f"**Download All Results**")
+        zip_all = all_tasks_zip_bytes(results, days, wage, dpi=200)
+        st.download_button(
+            label="📦 Download EVERYTHING (ZIP)",
+            data=zip_all,
+            file_name="decision_analytics_all_results.zip",
+            mime="application/zip",
+            key="dl_everything_zip",
+            use_container_width=True,
+        )
+
         cols = st.columns(4)
         i = 0
 
@@ -508,15 +523,6 @@ with tab8:
 
             i += 1
 
-        zip_all = all_tasks_zip_bytes(results, days, wage, dpi=200)
-        st.download_button(
-            label="📦 Download EVERYTHING (ZIP)",
-            data=zip_all,
-            file_name="decision_analytics_all_results.zip",
-            mime="application/zip",
-            key="dl_everything_zip",
-            use_container_width=True,
-        )
 
 with tab9:
     st.info(

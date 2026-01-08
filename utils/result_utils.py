@@ -21,8 +21,8 @@ def build_schedule_summary(results: list[dict]) -> pd.DataFrame:
                 "Total cost (£)": r.get("cost", ""),
                 "Cost increase (%)": r.get("cost_increase_pct", ""),
                 "Fairness gap": r.get("gap", ""),
-                "Daily coverage = 14?": coverage_cell,
-                "Has skill coverage?": (
+                "Coverage (14h/day)": coverage_cell,
+                "Skill coverage": (
                     "✅" if r.get("skill_coverage") is not None else "–"
                 ),
             }

@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+from typing import Optional
 
 # Paths
 DEFAULT_MANAGED_PATH = "outputs/aed_managed.csv"
@@ -9,7 +10,7 @@ DEFAULT_LOG_PATH = "outputs/audit_log.csv"
 
 
 # ID column handling
-def detect_id_col(df: pd.DataFrame) -> str | None:
+def detect_id_col(df: pd.DataFrame) -> Optional[str]:
     """
     Try to detect a patient/attendance ID column automatically.
     """
