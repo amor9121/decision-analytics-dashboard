@@ -25,6 +25,3 @@ Thumbs.db
 # === Logs & temp files ===
 *.log
 *.tmp
-
-# === Outputs / generated files ===
-outputs/

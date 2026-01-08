@@ -1,0 +1,3 @@
+timestamp,action,patient_id,detail
+2026-01-08 10:26:32,LOOKUP,P10010,"id_col=ID, found=True, include_deleted=False"
+2026-01-08 10:42:35,LOOKUP,P10010,"id_col=ID, found=True, include_deleted=False"

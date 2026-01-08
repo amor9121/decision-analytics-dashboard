@@ -3,16 +3,12 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-# ===============================
 # Paths
-# ===============================
 DEFAULT_MANAGED_PATH = "outputs/aed_managed.csv"
 DEFAULT_LOG_PATH = "outputs/audit_log.csv"
 
 
-# ===============================
 # ID column handling
-# ===============================
 def detect_id_col(df: pd.DataFrame) -> str | None:
     """
     Try to detect a patient/attendance ID column automatically.
@@ -73,9 +69,7 @@ def get_id_col(df: pd.DataFrame) -> str:
     return chosen
 
 
-# ===============================
 # Data persistence
-# ===============================
 def ensure_soft_delete_col(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure the DataFrame has an is_deleted column.
@@ -105,9 +99,7 @@ def save_managed_df(df: pd.DataFrame):
     df.to_csv(path, index=False)
 
 
-# ===============================
 # Audit logging
-# ===============================
 def log_action(
     action: str,
     patient_id=None,

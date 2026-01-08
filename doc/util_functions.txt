@@ -1,0 +1,97 @@
+
+=======================
+
+This document provides a consolidated index of utility functions currently
+implemented in the decision-analytics-dashboard project.
+
+The utility layer (utils/) encapsulates reusable supporting functionality,
+allowing task modules and the main application to remain focused on core
+analytical logic. Functions are grouped by responsibility to ensure clear
+separation of concerns, maintainability, and consistency with the system
+architecture described in Chapter 5.
+
+------------------------------------------------------------
+1. Command-line Interaction Utilities (utils/cli_utils.py)
+------------------------------------------------------------
+Functions supporting CLI-based interaction and textual output.
+
+- print_task1_2(r: dict, days, wage)
+- print_task3(r: dict)
+- print_task4(r: dict)
+- print_task5(r: dict)
+- print_task6(r: dict)
+- print_results(results, days, wage)
+
+------------------------------------------------------------
+2. Data Tidying and Preprocessing Utilities (utils/data_tidy.py)
+------------------------------------------------------------
+Functions responsible for cleaning and preparing raw data.
+
+- tidy_aed_data(aed: pd.DataFrame)
+
+------------------------------------------------------------
+3. Export and Download Utilities (utils/export_utils.py)
+------------------------------------------------------------
+Functions supporting export of results, tables, and figures.
+
+- grouped_csv_text(results, days, wage) -> str
+- flat_csv_text(results, days, wage) -> str
+- single_task_csv_text(task_result: dict, days, wage) -> str
+- export_csv(results, days, wage, filepath="outputs/scheduling_grouped.csv")
+- task_bundle_zip_bytes(task_result: dict, days, wage, dpi=200) -> bytes
+- all_tasks_zip_bytes(results: list[dict], days, wage, dpi=200) -> bytes
+- ensure_task_row(obj, default_name, default_status="Done")
+
+------------------------------------------------------------
+4. Figure and Visualisation Utilities (utils/figure_utils.py)
+------------------------------------------------------------
+Functions responsible for collecting and packaging visual outputs.
+
+- collect_task_figures(task_result: dict) -> dict[str, object]
+- figures_zip_bytes(figures: dict[str, object], dpi=200) -> bytes
+
+------------------------------------------------------------
+5. Managed Data and Audit Logging Utilities (utils/mgmt_utils.py)
+------------------------------------------------------------
+Functions supporting interactive data management and governance (Task 8).
+
+- detect_id_col(df: pd.DataFrame) -> str | None
+- get_id_col(df: pd.DataFrame) -> str
+- ensure_soft_delete_col(df: pd.DataFrame) -> pd.DataFrame
+- active_df(df: pd.DataFrame, include_deleted: bool) -> pd.DataFrame
+- save_managed_df(df: pd.DataFrame)
+- log_action(...)
+
+------------------------------------------------------------
+6. Scheduling Domain Utilities (utils/schedule_utils.py)
+------------------------------------------------------------
+Functions supporting scheduling calculations and validation.
+
+- build_final_table(allocation: pd.DataFrame, days, wage: dict) -> pd.DataFrame
+- check_daily_coverage(allocation: pd.DataFrame, days, required=14) -> dict
+
+------------------------------------------------------------
+7. Result Aggregation and Summary Utilities (utils/result_utils.py)
+------------------------------------------------------------
+Functions responsible for aggregating and summarising results across tasks.
+
+- build_schedule_summary(results: list[dict]) -> pd.DataFrame
+- build_aed_summary(results: list[dict]) -> pd.DataFrame
+
+------------------------------------------------------------
+8. Session State Utilities (utils/state_utils.py)
+------------------------------------------------------------
+Functions supporting Streamlit session state and cached data loading.
+
+- load_df(path: Path) -> pd.DataFrame
+- init_state(raw_path: Path, managed_path: Path)
+
+------------------------------------------------------------
+9. User Interface Rendering Utilities (utils/render_utils.py)
+------------------------------------------------------------
+Functions responsible for rendering Streamlit UI components.
+
+- show_tidy_summary_expander(...)
+- render_task_downloads(results, days, wage, n_cols=3)
+
+============================================================

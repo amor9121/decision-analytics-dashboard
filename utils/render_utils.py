@@ -71,3 +71,56 @@ def render_task_downloads(results, days, wage, n_cols=3):
                     )
 
             i += 1
+
+
+def show_tidy_summary_expander(
+    tidy_summary: dict,
+    title: str = "Data tidying checks",
+    expanded: bool = False,
+):
+    """
+    Render data tidying checks in a Streamlit expander.
+    """
+
+    if tidy_summary is None:
+        st.info("tidy_summary not available.")
+        return
+
+    with st.expander(title, expanded=expanded):
+
+        st.caption(
+            "Initial checks confirm that the dataset is already in a tidy format. "
+            "No further data transformation was required."
+        )
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Rows", tidy_summary.get("n_rows", "-"))
+        c2.metric("Columns", tidy_summary.get("n_columns", "-"))
+        c3.metric("Total missing", tidy_summary.get("total_missing", "-"))
+
+        st.divider()
+
+        # Data types
+        dtypes = tidy_summary.get("data_types", {})
+        if dtypes:
+            st.subheader("Variable types")
+            st.dataframe(
+                pd.DataFrame({"Variable": dtypes.keys(), "Type": dtypes.values()}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        # Categorical variables
+        cats = tidy_summary.get("categorical_variables", {})
+        if cats:
+            st.subheader("Categorical variables")
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "Variable": cats.keys(),
+                        "Number of unique levels": cats.values(),
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )

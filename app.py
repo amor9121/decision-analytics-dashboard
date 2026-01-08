@@ -20,16 +20,15 @@ from tasks.task8 import (
 )
 
 # ---- utils ----
-from utils.schedule_utils import build_schedule_summary, build_aed_summary
-from utils.render_utils import render_task_block, metric_row
-from utils.result_utils import ensure_task_row
+from utils.result_utils import build_schedule_summary, build_aed_summary
+from utils.render_utils import render_task_block, metric_row, show_tidy_summary_expander
 from utils.export_utils import (
     single_task_csv_text,
     task_bundle_zip_bytes,
     all_tasks_zip_bytes,
+    ensure_task_row,
 )
 from utils.figure_utils import collect_task_figures, figures_zip_bytes
-from utils.data_tidy import show_tidy_summary_expander
 from utils.state_utils import init_state
 
 # ---- path ----
