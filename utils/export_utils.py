@@ -148,33 +148,34 @@ def task_bundle_zip_bytes(task_result: dict, days, wage, *, dpi: int = 200) -> b
     return buf.getvalue()
 
 
-def all_tasks_zip_bytes(results: list[dict], days, wage, *, dpi: int = 200) -> bytes:
-    """
-    Create ONE master ZIP that contains each task bundle ZIP.
-    Output structure:
-      decision_analytics_all_results.zip
-        ├── Task_1_all_results.zip
-        ├── Task_2_-_Scenario_1_all_results.zip
-        └── ...
-    """
+def all_tasks_zip_bytes(results, days, wage, *, dpi=200):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for r in results:
-            task_name = r.get("name", "Task")
-            safe_name = (
-                task_name.replace("/", "-")
-                .replace("\\", "-")
-                .replace(":", "-")
-                .replace("|", "-")
-            )
 
-            # reuse your existing per-task bundler
-            one_zip = task_bundle_zip_bytes(r, days, wage, dpi=dpi)
+            # ---------- 1. Allocation-based CSV (Task 1–5) ----------
+            csv_text = single_task_csv_text(r, days, wage)
+            if csv_text:
+                task_name = r.get("name", "Task").replace(" ", "_")
+                zf.writestr(f"{task_name}.csv", csv_text)
 
-            # store each task bundle as a file inside the master zip
-            zf.writestr(f"{safe_name}_all_results.zip", one_zip)
+            # ---------- 2. Task figures ----------
+            figures = collect_task_figures(r)
+            for filename, fig in figures.items():
+                fig_buf = io.BytesIO()
+                fig.savefig(fig_buf, format="png", dpi=dpi, bbox_inches="tight")
+                fig_buf.seek(0)
+                zf.writestr(filename, fig_buf.read())
 
-    buf.seek(0)
+            # ---------- 3. Extra tables ----------
+            tables = r.get("tables")
+            if isinstance(tables, dict):
+                task_name = r.get("name", "Task").replace(" ", "_")
+                for key, df in tables.items():
+                    if hasattr(df, "to_csv"):
+                        csv_text = df.to_csv(index=False)
+                        zf.writestr(f"{task_name}_{key}.csv", csv_text)
+
     return buf.getvalue()
 
 

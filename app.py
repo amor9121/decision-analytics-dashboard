@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # ---- tasks ----
-from core.data import days, wage, aed
+from core.data import days, wage
 from tasks.task1 import solve_task1
 from tasks.task2_s1 import solve_task2_s1
 from tasks.task2_s2 import solve_task2_s2
@@ -21,7 +21,11 @@ from tasks.task8 import (
 
 # ---- utils ----
 from utils.result_utils import build_schedule_summary, build_aed_summary
-from utils.render_utils import render_task_block, metric_row, show_tidy_summary_expander
+from utils.render_utils import (
+    render_task_block,
+    metric_row,
+    show_tidy_summary_expander,
+)
 from utils.export_utils import (
     single_task_csv_text,
     task_bundle_zip_bytes,
@@ -95,7 +99,10 @@ def run_all_cached():
     t5["download_df"] = t5.get("download_df", pd.DataFrame())
 
     # ---- Task 6 ----
-    t6 = ensure_task_row(solve_task6(aed), "Task 6")
+    t6 = ensure_task_row(solve_task6("data/AED4weeks.csv"), "Task 6")
+    figs = t6.get("figures")
+    if isinstance(figs, list):
+        t6["figures"] = {f"fig{i}": fig for i, fig in enumerate(figs)}
     t6["case"] = "Prediction (ML)"
     t6["download_df"] = t6.get("summary", pd.DataFrame())
 
@@ -115,7 +122,7 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 st.title("📈 Decision Analytics Dashboard")
 
@@ -345,102 +352,148 @@ with tab6:
     st.pyplot(r["figures"]["fig1"], clear_figure=False)
 
 with tab7:
+
     st.info(
-        "**Task 6 – Breach Prediction (Machine Learning)**: explains how suitable machine learning algorithms were selected "
-        "for Task 6 using the scikit-learn algorithm selection map."
+        "**Task 6** – Logistic Regression with RFECV and balanced class weights. "
+        "This task builds a classification model to predict AED breaches "
+        "and evaluates performance using ROC-AUC, recall, and robustness checks."
     )
 
-    st.subheader("Algorithm selection rationale (scikit-learn map)")
+    r = solve_task6("data/AED4weeks.csv")
 
-    # ---- Just show the image ----
-    left, center, right = st.columns([1, 8, 1])
-    st.image(
-        "assets/ml_map.png",
-        caption="Scikit-learn algorithm selection map",
-        use_container_width=True,
-    )
+    # 3) Key metrics
+    st.subheader("Key metrics")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Sample size", r.get("n", "-"))
+
+    acc = r.get("accuracy", None)
+    c2.metric("Test accuracy", f"{acc:.2%}" if isinstance(acc, (int, float)) else "-")
+
+    roc_auc_val = r.get("roc_auc", None)
+    c3.metric("ROC-AUC", f"{roc_auc_val:.3f}" if isinstance(roc_auc_val, (int, float)) else "-")
+
+    # If you didn't return seed in solve_task6, fall back to 42 here
+    seed = r.get("seed", 42)
+    c4.metric("Random seed", seed if seed is not None else "-")
 
     st.divider()
 
-    st.subheader("How the final models were chosen")
-
-    st.markdown(
-        """
-**Step 1 – Labelled data available**
-The AED dataset contains a known breach outcome (breach / non-breach), therefore the
-problem is treated as **supervised learning**.
-
-**Step 2 – Predicting a category**
-The objective is to predict whether a patient will breach the 4-hour target, which is
-a binary outcome. This leads to a **classification** task.
-
-**Step 3 – Dataset size consideration**
-The dataset contains fewer than 100,000 observations, which allows the use of standard
-classification algorithms without scalability constraints.
-
-**Step 4 – Candidate algorithms**
-Following the scikit-learn selection map, suitable methods include:
-- Logistic Regression (baseline linear classifier)
-- Decision Tree (interpretable non-linear model)
-- Ensemble classifiers such as Random Forest
-
-**Step 5 – Final model selection**
-Based on comparative evaluation metrics (precision, recall, F1-score, PR-AUC),
-the Decision Tree was selected as the final model due to its strong balance between
-breach detection performance and interpretability.
-        """
-    )
-
-    # ---- Task 6 summary table ----
-    st.divider()
-    st.subheader("Model comparison table")
-
-    t6 = by_name.get("Task 6")
-    if t6 is None:
-        t6 = results[6] if len(results) > 6 else {}
-
-    metrics = t6.get("summary")
-    if metrics is None:
-        metrics = t6.get("metrics")
-
-    if metrics is not None:
-        st.dataframe(metrics, use_container_width=True)
+    # 4) Selected features
+    st.subheader("Selected features (RFECV)")
+    feats = r.get("selected_features", [])
+    if feats:
+        st.write(feats)
     else:
-        st.warning("Task 6 metrics table not available.")
+        st.info("No selected features returned.")
+
+    # 5) Classification report
+    st.divider()
+    st.subheader("Classification report")
+    rep = r.get("classification_report", "")
+    if rep:
+        st.code(rep, language="text")
+    else:
+        st.info("No classification report returned.")
+
     st.divider()
 
-    st.subheader("Model evaluation figure")
-
-    t6 = by_name.get("Task 6")
-    if t6 is None:
-        t6 = results[6] if len(results) > 6 else {}
-
-    plots = t6.get("plots", {})
-
-    if plots.get("combined") is not None:
-        st.pyplot(plots["combined"])
-    else:
-        st.warning(
-            "Combined figure not available. "
-            "Check that solve_task6() creates plots['combined']."
+    # 6) Confusion matrix (as table)
+    st.subheader("Confusion matrix")
+    cm = r.get("confusion_matrix", None)
+    if cm is not None:
+        cm_df = pd.DataFrame(
+            cm,
+            index=["Actual: On Time", "Actual: Breach"],
+            columns=["Pred: On Time", "Pred: Breach"],
         )
-    # ---- Decision Tree visualisation ----
+        st.dataframe(cm_df, use_container_width=True)
+    else:
+        st.info("No confusion matrix returned.")
+
+    # 7) Odds ratio table
     st.divider()
-    st.subheader("Decision Tree")
-
-    plots = t6.get("plots", {})
-
-    if plots.get("decision_tree") is not None:
-        st.pyplot(plots["decision_tree"])
-        st.caption(
-            "Top levels of the Decision Tree are shown for interpretability. "
-            "Each split indicates how patient characteristics contribute to breach prediction."
-        )
+    st.subheader("Odds ratio table")
+    or_df = r.get("odds_ratio_table", None)
+    if or_df is not None:
+        st.dataframe(or_df, use_container_width=True)
     else:
-        st.info(
-            "Decision Tree visualisation is not shown because the selected best model "
-            "is not a Decision Tree."
-        )
+        st.info("No odds ratio table returned.")
+
+    st.divider()
+
+    # 8) Cross-validation
+    st.subheader("Cross-validation")
+    cv_recall = r.get("cv_recall", None)
+    cv_auc = r.get("cv_auc", None)
+
+    if cv_recall is not None:
+        st.write(f"Recall (5-fold mean): {float(cv_recall.mean()):.2%}")
+        st.write(f"Recall (5-fold std): {float(cv_recall.std()):.2%}")
+    else:
+        st.write("Recall (5-fold): -")
+
+    if cv_auc is not None:
+        st.write(f"ROC-AUC (5-fold mean): {float(cv_auc.mean()):.4f}")
+        st.write(f"ROC-AUC (5-fold std): {float(cv_auc.std()):.4f}")
+    else:
+        st.write("ROC-AUC (5-fold): -")
+
+    st.divider()
+
+    # 9) Render ALL figures
+    st.subheader("Figures")
+
+    raw_figs = r.get("figures", {})
+    figs = list(raw_figs.values()) if isinstance(raw_figs, dict) else raw_figs
+
+    titles = [
+        "RFECV Feature Selection Process",          # figs[0]
+        "Confusion Matrix (Balanced Weights)",      # figs[1]
+        "ROC Curve",                                # figs[2]
+        "Odds Ratio Analysis (Risk Factors)",       # figs[3]
+        "5-Fold Cross-Validation Stability",        # figs[4]
+        "Learning Curve (Check for Overfitting)",   # figs[5]
+    ]
+
+    if not figs:
+        st.info("No figures returned.")
+
+    else:
+        # ---------- Row 1: Main performance (half width) ----------
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.caption(titles[0])
+            st.pyplot(figs[0], clear_figure=False, use_container_width=True)
+
+        with col2:
+            st.caption(titles[2])
+            st.pyplot(figs[2], clear_figure=False, use_container_width=True)
+
+        st.divider()
+
+        # ---------- Row 2: Diagnostics (half width, secondary) ----------
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.caption(titles[1])
+            st.pyplot(figs[1], clear_figure=False, use_container_width=True)
+
+        with col2:
+            st.caption(titles[4])
+            st.pyplot(figs[4], clear_figure=False, use_container_width=True)
+
+        st.divider()
+
+        # ---------- Row 3: Interpretation (full width) ----------
+        st.caption(titles[3])
+        st.pyplot(figs[3], clear_figure=False, use_container_width=True)
+
+        st.divider()
+
+        # ---------- Row 4: Model behaviour (full width) ----------
+        st.caption(titles[5])
+        st.pyplot(figs[5], clear_figure=False, use_container_width=True)
 
 with tab8:
     st.info(
@@ -533,7 +586,6 @@ with tab8:
                     )
 
             i += 1
-
 
 with tab9:
     st.info(

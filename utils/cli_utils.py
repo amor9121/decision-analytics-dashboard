@@ -1,5 +1,4 @@
-from sklearn.metrics import confusion_matrix
-import pandas as pd
+import numpy as np
 
 
 def print_task1_2(r: dict, days, wage):
@@ -97,33 +96,54 @@ def print_task5(r: dict):
 
 
 def print_task6(r: dict):
-    print("\n[Task 6] Breach prediction (ML)")
+    print("\n[Task 6] Machine learning model analysis")
 
-    metrics = r.get("summary")
-    if not isinstance(metrics, pd.DataFrame):
-        metrics = r.get("metrics")
+    # ---- Summary ----
+    if r.get("summary") is not None:
+        print("\nSummary:")
+        print(r["summary"])
 
-    if metrics is not None:
-        print("\nModel comparison table:")
-        print(metrics.round(3))
+    # ---- Key metrics ----
+    print("\nMetrics:")
+    acc = r.get("accuracy", None)
+    if isinstance(acc, (int, float)):
+        print(f"- Test accuracy: {acc:.2%}")
 
-    final_model = r.get("final_model") or r.get("best_model_name")
-    if final_model is not None:
-        print("\nFinal model:", final_model)
+    roc_auc_val = r.get("roc_auc", None)
+    if isinstance(roc_auc_val, (int, float)):
+        print(f"- ROC-AUC: {roc_auc_val:.4f}")
 
-    if r.get("notes") is not None:
-        print("\nNotes:")
-        for k, v in r["notes"].items():
-            print(f"- {k}: {v}")
+    # ---- Selected features ----
+    if r.get("selected_features") is not None:
+        print("\nSelected features:")
+        for f in r["selected_features"]:
+            print(f"- {f}")
 
-    td = r.get("test_data", {})
-    if "y_test" in td and "y_pred_best" in td:
-        cm = confusion_matrix(td["y_test"], td["y_pred_best"])
-        print("\nConfusion Matrix [ [TN FP], [FN TP] ]:")
-        print(cm)
+    # ---- Classification report ----
+    if r.get("classification_report") is not None:
+        print("\nClassification report:")
+        print(r["classification_report"])
 
-    if r.get("plots") is not None:
-        print("\nPlots:", ", ".join(r["plots"].keys()))
+    # ---- Cross-validation ----
+    cv_recall = r.get("cv_recall", None)
+    cv_auc = r.get("cv_auc", None)
+
+    if cv_recall is not None or cv_auc is not None:
+        print("\nCross-validation:")
+        if cv_recall is not None:
+            print(f"- Recall (5-fold mean): {float(np.mean(cv_recall)):.2%}")
+        if cv_auc is not None:
+            print(f"- ROC-AUC (5-fold mean): {float(np.mean(cv_auc)):.4f}")
+
+    # ---- Odds ratio table ----
+    if r.get("odds_ratio_table") is not None:
+        print("\nOdds ratio table:")
+        print(r["odds_ratio_table"])
+
+    # ---- Figures ----
+    if r.get("figures") is not None:
+        print("\nFigures generated (see plots):")
+        print(f"- Total figures: {len(r['figures'])}")
 
 
 def print_results(results, days, wage):

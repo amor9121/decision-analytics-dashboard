@@ -1,233 +1,339 @@
-# ----- Core libraries -----
+# === Core data handling ===
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
 
-# ----- Scikit-learn: data splitting & pipelines -----
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-# ----- Scikit-learn: models -----
+# === Visualisation ===
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# === Scikit-learn: model & preprocessing ===
+from sklearn.model_selection import (
+    train_test_split,
+    StratifiedKFold,
+    cross_val_score,
+    learning_curve,
+)
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.ensemble import RandomForestClassifier
-# ----- Scikit-learn: evaluation metrics & plots -----
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import RFECV
+
+# === Scikit-learn: evaluation ===
 from sklearn.metrics import (
+    classification_report,
     confusion_matrix,
-    ConfusionMatrixDisplay,
-    balanced_accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
-    RocCurveDisplay,
-    precision_recall_curve,
+    roc_curve,
     auc,
+    accuracy_score,
 )
 
+# ------------------------------------------------------------
+# Plotting style (kept simple & academic)
+# ------------------------------------------------------------
+sns.set_style("whitegrid")
 
-def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.5):
+# ------------------------------------------------------------
+# Data utilities (kept local to avoid extra dependencies)
+# ------------------------------------------------------------
+
+
+def get_data(filepath: str):
+    df = pd.read_csv(filepath)
+    print(f"[Data Load] Successfully loaded {len(df)} records.")
+    return df
+
+
+def clean_target_variable(x):
     """
-    End-to-end supervised ML workflow for AED breach prediction
+    Robust cleaning: convert target variable to binary (0/1).
+    """
+    s = str(x).lower().strip()
+    if "non" in s or "not" in s or "on time" in s or s in {"0", "0.0"}:
+        return 0
+    if "breach" in s or s in {"1", "1.0"}:
+        return 1
+    return 0
+
+
+# ------------------------------------------------------------
+# Task 6 main solver
+# ------------------------------------------------------------
+def solve_task6(filepath: str = "data/AED4weeks.csv"):
+    """
+    Final classification model for Task 6:
+    - Logistic Regression (balanced)
+    - RFECV feature selection
+    - Robust validation & diagnostics
     """
 
-    # ----- Raw data / Data acquisition -----
-    df = aed.copy()
+    print("\n" + "=" * 80)
+    print("TASK 6: Final Model with Comprehensive Validation")
+    print("=" * 80)
 
-    # ----- Data tidying: define target and basic cleaning (pandas) -----
-    if "Breach" in df.columns:
-        y = df["Breach"].astype(int)
-        X = df.drop(columns=["Breach"])
-    else:
-        y = (
-            df["Breachornot"]
-            .str.lower()
-            .map({"breach": 1, "non-breach": 0})
-            .astype(int)
-        )
-        X = df.drop(columns=["Breachornot"])
+    # === Figure collector (for Streamlit / dashboard integration) ===
+    figures = []
 
-    # ----- Data tidying: remove leakage and non-deployable features -----
-    drop_cols = ["ID", "LoS", "HRG", "noofinvestigation", "nooftreatment", "Day"]
-    X = X.drop(columns=[c for c in drop_cols if c in X.columns], errors="ignore")
+    def _collect_fig():
+        fig = plt.gcf()
+        figures.append(fig)
+        plt.close(fig)
 
-    # ----- Train / test split (before any fitting) -----
+    # ------------------------------------------------------------
+    # 1. Data preparation
+    # ------------------------------------------------------------
+    df = get_data(filepath)
+
+    # Clean target
+    df["Breachornot"] = df["Breachornot"].apply(clean_target_variable)
+
+    potential_features = [
+        "Age",
+        "Period",
+        "DayofWeek",
+        "noofinvestigations",
+        "noofinvestigation",
+        "nooftreatments",
+        "nooftreatment",
+        "noofpatients",
+        "noofpatient",
+    ]
+
+    feature_cols = [c for c in potential_features if c in df.columns]
+
+    # Defensive check against leakage
+    if "LoS" in feature_cols:
+        feature_cols.remove("LoS")
+        print("[Info] 'LoS' removed to prevent data leakage.")
+
+    X = df[feature_cols]
+    y = df["Breachornot"]
+
+    # One-hot encoding (safe for categorical inputs)
+    X = pd.get_dummies(X, drop_first=True)
+    feature_names = X.columns.tolist()
+
+    # Train / test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # ----- Data preprocessing: identify numeric and categorical features -----
-    cat_cols = X_train.select_dtypes(include=["object"]).columns.tolist()
-    num_cols = [c for c in X_train.columns if c not in cat_cols]
+    # Scaling
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-    # ----- Preprocessing pipeline: scaled numeric + one-hot categorical -----
-    preprocessor_scaled = ColumnTransformer(
-        transformers=[
-            ("num", StandardScaler(), num_cols),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ]
+    X_train_df = pd.DataFrame(X_train_scaled, columns=feature_names)
+    X_test_df = pd.DataFrame(X_test_scaled, columns=feature_names)
+
+    # ------------------------------------------------------------
+    # 2. Feature selection (RFECV)
+    # ------------------------------------------------------------
+    base_model = LogisticRegression(
+        class_weight="balanced", solver="liblinear", random_state=42
     )
 
-    # ----- Preprocessing pipeline (no scaling): for tree-based models -----
-    preprocessor_noscale = ColumnTransformer(
-        transformers=[
-            ("num", "passthrough", num_cols),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ]
+    rfecv = RFECV(
+        estimator=base_model,
+        step=1,
+        cv=StratifiedKFold(5),
+        scoring="roc_auc",
+        min_features_to_select=1,
     )
 
-    # ----- Pipelines: preprocess + model in one object (prevents leakage) -----
-    models = {
-        "LogReg": LogisticRegression(max_iter=3000, class_weight="balanced"),
-        "DecisionTree": DecisionTreeClassifier(
-            max_depth=5, random_state=random_state, class_weight="balanced"
-        ),
-        "RandomForest": RandomForestClassifier(
-            n_estimators=300,
-            random_state=random_state,
-            class_weight="balanced",
-            n_jobs=-1,
-        ),
-    }
+    rfecv.fit(X_train_df, y_train)
 
-    # ----- Cross-validation strategy -----
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    selected_features = X_train_df.columns[rfecv.support_].tolist()
+    print(f"   >> Optimal Feature Count: {rfecv.n_features_}")
+    print(f"   >> Selected Features: {selected_features}")
 
-    # ----- Model training, cross-validation, and evaluation -----
-    rows = []
-    fitted = {}
-
-    forest_importance = None
-    forest_feature_names = None
-
-    for name, clf in models.items():
-
-        # ----- Select preprocessing strategy per model -----
-        prep = preprocessor_noscale if name == "DecisionTree" else preprocessor_scaled
-
-        # ----- Build pipeline -----
-        pipe = Pipeline([("prep", prep), ("model", clf)])
-        fitted[name] = pipe
-
-        # ----- Cross-validation (training data only) -----
-        cv_score = cross_val_score(
-            pipe,
-            X_train,
-            y_train,
-            cv=cv,
-            scoring="balanced_accuracy",
-            n_jobs=-1,
-        ).mean()
-
-        # ----- Model fitting (fit + transform handled inside pipeline) -----
-        pipe.fit(X_train, y_train)
-
-        # ----- Baseline sanity check: train vs test accuracy -----
-        train_acc = pipe.score(X_train, y_train)
-        test_acc = pipe.score(X_test, y_test)
-
-        # ----- Probability prediction and thresholding -----
-        y_prob = pipe.predict_proba(X_test)[:, 1]
-        y_pred = (y_prob >= threshold).astype(int)
-
-        # ----- Evaluation metrics on test set -----
-        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-
-        pr_p, pr_r, _ = precision_recall_curve(y_test, y_prob)
-        pr_auc = auc(pr_r, pr_p)
-
-        rows.append(
-            {
-                "model": name,
-                "train_accuracy": train_acc,
-                "test_accuracy": test_acc,
-                "cv_accuracy": cv_score,
-                "balanced_accuracy": balanced_accuracy_score(y_test, y_pred),
-                "precision_breach": precision_score(y_test, y_pred, zero_division=0),
-                "recall_breach": recall_score(y_test, y_pred, zero_division=0),
-                "f1_breach": f1_score(y_test, y_pred, zero_division=0),
-                "roc_auc": roc_auc_score(y_test, y_prob),
-                "pr_auc": pr_auc,
-                "tn": tn,
-                "fp": fp,
-                "fn": fn,
-                "tp": tp,
-            }
-        )
-
-        # ----- Extract Random Forest feature importance -----
-        if name == "RandomForest":
-            model = pipe.named_steps["model"]
-            prep_used = pipe.named_steps["prep"]
-            forest_importance = model.feature_importances_
-            forest_feature_names = prep_used.get_feature_names_out()
-
-    # ----- Final model selection based on PR AUC -----
-    summary = pd.DataFrame(rows).set_index("model").sort_values(
-        "pr_auc", ascending=False
+    # --- Plot 1: RFECV performance ---
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        range(1, len(rfecv.cv_results_["mean_test_score"]) + 1),
+        rfecv.cv_results_["mean_test_score"],
+        marker="o",
+        color="purple",
     )
-    best_model = summary.index[0]
-    best_pipe = fitted[best_model]
+    plt.title("RFECV Feature Selection Process")
+    plt.xlabel("Number of Features Selected")
+    plt.ylabel("CV Score (ROC-AUC)")
+    plt.grid(True)
+    plt.tight_layout()
+    _collect_fig()
 
-    # ----- Decision tree visualisation (if selected as best model) -----
-    fig_tree = None
-    if best_model == "DecisionTree":
-        tree_model = best_pipe.named_steps["model"]
-        prep_used = best_pipe.named_steps["prep"]
+    # ------------------------------------------------------------
+    # 3. Final model training
+    # ------------------------------------------------------------
+    X_train_final = X_train_df[selected_features]
+    X_test_final = X_test_df[selected_features]
 
-        feature_names = prep_used.get_feature_names_out()
-        feature_names = [f.replace("num__", "").replace("cat__", "") for f in feature_names]
-
-        fig_tree, ax_tree = plt.subplots(figsize=(20, 10))
-        plot_tree(
-            tree_model,
-            feature_names=feature_names,
-            class_names=["Non-breach", "Breach"],
-            filled=True,
-            rounded=True,
-            max_depth=2,
-            fontsize=10,
-            ax=ax_tree,
-            impurity=False,
-        )
-        ax_tree.set_title("Decision Tree (Top Levels)")
-        fig_tree.tight_layout()
-
-    # ----- Final test evaluation: confusion matrix, ROC, and PR curves -----
-    y_prob_best = best_pipe.predict_proba(X_test)[:, 1]
-    y_pred_best = (y_prob_best >= threshold).astype(int)
-    cm_best = confusion_matrix(y_test, y_pred_best)
-
-    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
-
-    ConfusionMatrixDisplay(cm_best, display_labels=["Non-breach", "Breach"]).plot(
-        ax=axes[0, 0], values_format="d", colorbar=False
+    final_model = LogisticRegression(
+        class_weight="balanced", solver="liblinear", random_state=42
     )
-    axes[0, 0].set_title(f"(A) Confusion Matrix: {best_model}")
+    final_model.fit(X_train_final, y_train)
 
-    ax = axes[0, 1]
-    for name, pipe in fitted.items():
-        RocCurveDisplay.from_estimator(pipe, X_test, y_test, name=name, ax=ax)
-    ax.set_title("(B) ROC Curves (All Models)")
+    y_pred = final_model.predict(X_test_final)
+    y_prob = final_model.predict_proba(X_test_final)[:, 1]
 
-    ax = axes[1, 0]
-    for name, pipe in fitted.items():
-        y_prob = pipe.predict_proba(X_test)[:, 1]
-        pr_p, pr_r, _ = precision_recall_curve(y_test, y_prob)
-        ax.plot(pr_r, pr_p, label=name)
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title("(C) Precision–Recall Curves (All Models)")
-    ax.legend()
+    # ------------------------------------------------------------
+    # 4. Performance metrics
+    # ------------------------------------------------------------
+    acc = accuracy_score(y_test, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
+    report_txt = classification_report(
+        y_test, y_pred, target_names=["On Time", "Breach"]
+    )
 
-    axes[1, 1].axis("off")
-    fig.tight_layout()
+    print("\nMODEL PERFORMANCE REPORT")
+    print(f"Test Accuracy: {acc:.2%}")
+    print(report_txt)
 
+    # --- Plot 2: Confusion matrix ---
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["Pred: On Time", "Pred: Breach"],
+        yticklabels=["Actual: On Time", "Actual: Breach"],
+    )
+    plt.title("Confusion Matrix (Balanced Logistic Regression)")
+    plt.tight_layout()
+    _collect_fig()
+
+    # --- Plot 3: ROC curve ---
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    roc_auc_val = auc(fpr, tpr)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"AUC = {roc_auc_val:.2f}")
+    plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
+    plt.title("ROC Curve")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+    _collect_fig()
+
+    # --- Plot 4: Odds ratios ---
+    odds_df = pd.DataFrame(
+        {
+            "Feature": selected_features,
+            "Odds_Ratio": np.exp(final_model.coef_[0]),
+        }
+    ).sort_values("Odds_Ratio", ascending=False)
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x="Odds_Ratio", y="Feature", data=odds_df, palette="viridis")
+    plt.axvline(x=1, color="red", linestyle="--", label="Neutral (OR=1)")
+    plt.title("Odds Ratio Analysis (Risk Factors)")
+    plt.xlabel("Odds Ratio (Values > 1 indicate higher risk)")
+    plt.legend()
+    plt.tight_layout()
+    _collect_fig()
+
+    # ------------------------------------------------------------
+    # 5. Robustness checks
+    # ------------------------------------------------------------
+    cv = StratifiedKFold(5, shuffle=True, random_state=42)
+    cv_recall = cross_val_score(
+        final_model, X_train_final, y_train, cv=cv, scoring="recall"
+    )
+    cv_auc = cross_val_score(
+        final_model, X_train_final, y_train, cv=cv, scoring="roc_auc"
+    )
+
+    print(f"   >> 5-Fold Recall Mean: {cv_recall.mean():.2%}")
+    print(f"   >> 5-Fold ROC-AUC Mean: {cv_auc.mean():.4f}")
+
+    # --- Plot 5: CV stability ---
+    plt.figure(figsize=(6, 6))
+    plt.boxplot(
+        [cv_recall, cv_auc],
+        labels=["Recall", "ROC-AUC"],
+        patch_artist=True,
+        boxprops=dict(facecolor="lightblue"),
+    )
+    plt.title("5-Fold Cross-Validation Stability")
+    plt.ylabel("Score")
+    plt.ylim(0, 1.05)
+    plt.grid(True, axis="y")
+    plt.tight_layout()
+    _collect_fig()
+
+    # --- Plot 6: Learning curve ---
+    train_sizes, train_scores, test_scores = learning_curve(
+        final_model,
+        X_train_final,
+        y_train,
+        cv=5,
+        scoring="recall",
+        train_sizes=np.linspace(0.1, 1.0, 5),
+    )
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(train_sizes, train_scores.mean(axis=1), "o-", color="r", label="Training Recall")
+    plt.plot(test_scores.mean(axis=1),)
+    plt.plot(train_sizes, test_scores.mean(axis=1), "o-", color="g", label="Validation Recall")
+
+    train_std = train_scores.std(axis=1)
+    test_std = test_scores.std(axis=1)
+
+    plt.fill_between(
+        train_sizes,
+        train_scores.mean(axis=1) - train_std,
+        train_scores.mean(axis=1) + train_std,
+        alpha=0.1,
+        color="r",
+    )
+    plt.fill_between(
+        train_sizes,
+        test_scores.mean(axis=1) - test_std,
+        test_scores.mean(axis=1) + test_std,
+        alpha=0.1,
+        color="g",
+    )
+
+    plt.title("Learning Curve (Check for Overfitting)")
+    plt.xlabel("Training Examples")
+    plt.ylabel("Recall Score")
+    plt.legend(loc="best")
+    plt.grid(True)
+    plt.tight_layout()
+    _collect_fig()
+
+    # ------------------------------------------------------------
+    # Return bundle (system-friendly)
+    # ------------------------------------------------------------
     return {
         "name": "Task 6",
-        "summary": summary,
-        "forest_importance": forest_importance,
-        "forest_feature_names": forest_feature_names,
-        "best_model_name": best_model,
-        "plots": {"combined": fig, "decision_tree": fig_tree},
+        "summary": "Logistic Regression with RFECV and balanced class weights.",
+        "n": len(df),
+        "accuracy": float(acc),
+        "roc_auc": float(roc_auc_val),
+        "classification_report": report_txt,
+        "confusion_matrix": cm,
+        "selected_features": selected_features,
+        "odds_ratio_table": odds_df,
+        "cv_recall": cv_recall,
+        "cv_auc": cv_auc,
+        "figures": {
+            f"fig{i}": fig for i, fig in enumerate(figures)
+        },
+        "tables": {
+            "odds_ratio": odds_df.reset_index(drop=True),
+
+            "confusion_matrix": pd.DataFrame(
+                cm,
+                index=["Actual_OnTime", "Actual_Breach"],
+                columns=["Pred_OnTime", "Pred_Breach"],
+            ),
+
+            "cv_recall": pd.DataFrame({"recall": cv_recall}),
+            "cv_auc": pd.DataFrame({"roc_auc": cv_auc}),
+
+            "selected_features": pd.DataFrame(
+                {"feature": selected_features}
+            ),
+        },
     }
