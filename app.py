@@ -104,14 +104,25 @@ def run_all_cached():
 
 
 # ---- Streamlit UI ----
-
-st.set_page_config(page_title="Decision Analytics Dashboard", layout="wide")
-st.title("Decision Analytics Dashboard")
+st.set_page_config(page_title="Decision Analytics Dashboard", layout="centered")
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1000px;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+st.title("📈 Decision Analytics Dashboard")
 
 with st.expander("What this app does", expanded=True):
     st.markdown(
         """
-    **What this app does**:
+    **### Key Decision Questions Supported**:
     - **Task 1**: Baseline cost-minimising schedule (LP).
     - **Task 2 – Scenario 1**: Minimise workload inequality **subject to ≤ 1.8% cost increase**.
     - **Task 2 – Scenario 2**: Find the **fairest** possible schedule, then minimise cost (two-stage).
@@ -460,7 +471,7 @@ with tab8:
 
     with st.expander("Downloads", expanded=True):
 
-        st.markdown(f"**Download All Results**")
+        st.markdown("**Download All Results**")
         zip_all = all_tasks_zip_bytes(results, days, wage, dpi=200)
         st.download_button(
             label="📦 Download EVERYTHING (ZIP)",

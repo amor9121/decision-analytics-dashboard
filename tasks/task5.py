@@ -284,8 +284,3 @@ def solve_task5(
         },
         "figures": figs,
     }
-
-
-# ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
-if __name__ == "__main__":
-    t5 = solve_task5()

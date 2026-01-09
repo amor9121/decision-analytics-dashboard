@@ -1,11 +1,3 @@
-# ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
-# import sys
-# from pathlib import Path
-# PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# if str(PROJECT_ROOT) not in sys.path:
-#    sys.path.insert(0, str(PROJECT_ROOT))
-# =================================================
-
 import pulp
 import pandas as pd
 
@@ -134,13 +126,3 @@ def solve_task2_s2(baseline_cost):
 
     return results
 
-
-# ===== DEBUG ONLY (REMOVE BEFORE SUBMISSION) =====
-if __name__ == "__main__":
-
-    from core.utils import print_results
-
-    baseline_cost = 1755
-    s2 = solve_task2_s2(baseline_cost)
-    print_results([s2], days, wage)
-# =================================================

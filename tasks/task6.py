@@ -1,19 +1,20 @@
+# ----- Core libraries -----
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
+# ----- Scikit-learn: data splitting & pipelines -----
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import Pipeline
-
+# ----- Scikit-learn: models -----
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-
+# ----- Scikit-learn: evaluation metrics & plots -----
 from sklearn.metrics import (
     confusion_matrix,
-    accuracy_score,
+    ConfusionMatrixDisplay,
     balanced_accuracy_score,
     precision_score,
     recall_score,
@@ -22,18 +23,18 @@ from sklearn.metrics import (
     RocCurveDisplay,
     precision_recall_curve,
     auc,
-    ConfusionMatrixDisplay,
 )
 
 
 def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.5):
     """
-    Task 6: Apply supervised machine learning to predict breach vs non-breach
+    End-to-end supervised ML workflow for AED breach prediction
     """
 
+    # ----- Raw data / Data acquisition -----
     df = aed.copy()
 
-    # Define target variable (breach vs non-breach)
+    # ----- Data tidying: define target and basic cleaning (pandas) -----
     if "Breach" in df.columns:
         y = df["Breach"].astype(int)
         X = df.drop(columns=["Breach"])
@@ -46,28 +47,20 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         )
         X = df.drop(columns=["Breachornot"])
 
-    # --- Drop leakage & non-deployable features
-    drop_cols = [
-        "ID",
-        "LoS",
-        "HRG",
-        "noofinvestigation",
-        "nooftreatment",
-        "Day",
-    ]
-
+    # ----- Data tidying: remove leakage and non-deployable features -----
+    drop_cols = ["ID", "LoS", "HRG", "noofinvestigation", "nooftreatment", "Day"]
     X = X.drop(columns=[c for c in drop_cols if c in X.columns], errors="ignore")
 
-    # 1) Train–test split
+    # ----- Train / test split (before any fitting) -----
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    # 2) Preprocessing (scale numeric + one-hot categorical)
+    # ----- Data preprocessing: identify numeric and categorical features -----
     cat_cols = X_train.select_dtypes(include=["object"]).columns.tolist()
     num_cols = [c for c in X_train.columns if c not in cat_cols]
 
-    # Scaled (good for LogReg / often OK for RF)
+    # ----- Preprocessing pipeline: scaled numeric + one-hot categorical -----
     preprocessor_scaled = ColumnTransformer(
         transformers=[
             ("num", StandardScaler(), num_cols),
@@ -75,7 +68,7 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         ]
     )
 
-    # No-scale (better interpretability for DecisionTree)
+    # ----- Preprocessing pipeline (no scaling): for tree-based models -----
     preprocessor_noscale = ColumnTransformer(
         transformers=[
             ("num", "passthrough", num_cols),
@@ -83,7 +76,7 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         ]
     )
 
-    # 3) Train machine learning models
+    # ----- Pipelines: preprocess + model in one object (prevents leakage) -----
     models = {
         "LogReg": LogisticRegression(max_iter=3000, class_weight="balanced"),
         "DecisionTree": DecisionTreeClassifier(
@@ -97,39 +90,47 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         ),
     }
 
+    # ----- Cross-validation strategy -----
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
+    # ----- Model training, cross-validation, and evaluation -----
     rows = []
     fitted = {}
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
     forest_importance = None
     forest_feature_names = None
 
     for name, clf in models.items():
-        # Use no-scale preprocessing only for DecisionTree (readable thresholds)
+
+        # ----- Select preprocessing strategy per model -----
         prep = preprocessor_noscale if name == "DecisionTree" else preprocessor_scaled
 
+        # ----- Build pipeline -----
         pipe = Pipeline([("prep", prep), ("model", clf)])
-        pipe.fit(X_train, y_train)
         fitted[name] = pipe
 
-        if name == "RandomForest":
-            model = pipe.named_steps["model"]
-            prep = pipe.named_steps["prep"]
-
-            forest_importance = model.feature_importances_
-            forest_feature_names = prep.get_feature_names_out()
-
-        # Add cv
+        # ----- Cross-validation (training data only) -----
         cv_score = cross_val_score(
-            pipe, X_train, y_train, cv=cv, scoring="balanced_accuracy", n_jobs=-1
+            pipe,
+            X_train,
+            y_train,
+            cv=cv,
+            scoring="balanced_accuracy",
+            n_jobs=-1,
         ).mean()
 
-        # 4) Score / evaluate models
+        # ----- Model fitting (fit + transform handled inside pipeline) -----
+        pipe.fit(X_train, y_train)
+
+        # ----- Baseline sanity check: train vs test accuracy -----
         train_acc = pipe.score(X_train, y_train)
         test_acc = pipe.score(X_test, y_test)
 
+        # ----- Probability prediction and thresholding -----
         y_prob = pipe.predict_proba(X_test)[:, 1]
         y_pred = (y_prob >= threshold).astype(int)
 
+        # ----- Evaluation metrics on test set -----
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
 
         pr_p, pr_r, _ = precision_recall_curve(y_test, y_prob)
@@ -154,23 +155,28 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
             }
         )
 
-    summary = (
-        pd.DataFrame(rows).set_index("model").sort_values("pr_auc", ascending=False)
-    )
+        # ----- Extract Random Forest feature importance -----
+        if name == "RandomForest":
+            model = pipe.named_steps["model"]
+            prep_used = pipe.named_steps["prep"]
+            forest_importance = model.feature_importances_
+            forest_feature_names = prep_used.get_feature_names_out()
 
+    # ----- Final model selection based on PR AUC -----
+    summary = pd.DataFrame(rows).set_index("model").sort_values(
+        "pr_auc", ascending=False
+    )
     best_model = summary.index[0]
     best_pipe = fitted[best_model]
 
-    # --- Decision Tree visualisation (readable)
+    # ----- Decision tree visualisation (if selected as best model) -----
+    fig_tree = None
     if best_model == "DecisionTree":
         tree_model = best_pipe.named_steps["model"]
         prep_used = best_pipe.named_steps["prep"]
 
         feature_names = prep_used.get_feature_names_out()
-        # shorten feature names for readability
-        feature_names = [
-            f.replace("num__", "").replace("cat__", "") for f in feature_names
-        ]
+        feature_names = [f.replace("num__", "").replace("cat__", "") for f in feature_names]
 
         fig_tree, ax_tree = plt.subplots(figsize=(20, 10))
         plot_tree(
@@ -186,10 +192,8 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         )
         ax_tree.set_title("Decision Tree (Top Levels)")
         fig_tree.tight_layout()
-    else:
-        fig_tree = None
 
-    # Visual evaluation (confusion matrix, ROC curves, PR curves)
+    # ----- Final test evaluation: confusion matrix, ROC, and PR curves -----
     y_prob_best = best_pipe.predict_proba(X_test)[:, 1]
     y_pred_best = (y_prob_best >= threshold).astype(int)
     cm_best = confusion_matrix(y_test, y_pred_best)
@@ -225,23 +229,5 @@ def solve_task6(aed: pd.DataFrame, test_size=0.2, random_state=123, threshold=0.
         "forest_importance": forest_importance,
         "forest_feature_names": forest_feature_names,
         "best_model_name": best_model,
-        "plots": {
-            "combined": fig,
-            "decision_tree": fig_tree,
-        },
+        "plots": {"combined": fig, "decision_tree": fig_tree},
     }
-
-
-if __name__ == "__main__":
-    aed = pd.read_csv("data/AED4weeks.csv")
-    out = solve_task6(aed)
-
-    print("\n=== Task 6: Model comparison table ===")
-    print(out["summary"].round(3))
-    imp = pd.Series(
-        out["forest_importance"], index=out["forest_feature_names"]
-    ).sort_values(ascending=False)
-
-    print(imp.head(5))
-
-    plt.show()
