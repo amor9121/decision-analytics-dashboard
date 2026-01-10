@@ -1,74 +1,140 @@
-import pandas as pd
+# tasks/task5.py
+from __future__ import annotations
+
+from typing import Any, Dict, Tuple
+
 import numpy as np
-import matplotlib as mpl
+import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import stats
+import seaborn as sns
+from scipy.stats import mannwhitneyu, chi2_contingency
+
+sns.set_style("whitegrid")
+
+# -----------------------------
+# statsmodels
+# -----------------------------
+try:
+    import statsmodels.formula.api as smf
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+    _HAS_SM = True
+except Exception:
+    smf = None
+    variance_inflation_factor = None
+    _HAS_SM = False
 
 
-def solve_task5(
-    csv_path="data/AED4weeks.csv",
-    seed=123,
-    sample_n=400,
-    los_target_min=240,
-    prolonged_quantile=0.75,
-):
+# -----------------------------
+# Helpers
+# -----------------------------
+def _new_fig(figsize: Tuple[float, float] = (5.5, 3.5)):
+    fig, ax = plt.subplots(figsize=figsize)
+    return fig, ax
+
+
+def _breach_int(series: pd.Series) -> pd.Series:
     """
-    Task 5 (Polished + 4-in-1 Figure):
-    - Tables: 5.1–5.3
-    - Figures: fig0 (overview) + fig1 (4-in-1 key driver panel)
-    - Headless-safe: no plt.show(); return Figure objects for savefig()
-    - No Task 6 (no ML)
+    Convert Breachornot labels to binary:
+    breach -> 1, non-breach -> 0
     """
+    s = series.astype(str).str.strip().str.lower()
+    out = s.map({"breach": 1, "non-breach": 0})
+    return pd.to_numeric(out, errors="coerce")
 
-    # =========================
-    # Global plotting style
-    # =========================
-    mpl.rcParams.update(
+
+def _time_block(h) -> str:
+    try:
+        h = int(h)
+    except Exception:
+        return "Unknown"
+    if 0 <= h < 6:
+        return "Night"
+    if 6 <= h < 12:
+        return "Morning"
+    if 12 <= h < 18:
+        return "Afternoon"
+    return "Evening"
+
+
+def _coef_table(model) -> pd.DataFrame:
+    coef = model.params
+    se = model.bse
+
+    z = 1.96
+    lo = coef.values - z * se.values
+    hi = coef.values + z * se.values
+
+    # avoid overflow in exp(); exp(709) ~ 8e307 is near float max
+    lo = np.clip(lo, -709, 709)
+    hi = np.clip(hi, -709, 709)
+    c = np.clip(coef.values, -709, 709)
+
+    out = pd.DataFrame(
         {
-            "figure.dpi": 120,
-            "savefig.dpi": 200,
-            "axes.titlesize": 13,
-            "axes.labelsize": 11,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
-            "legend.fontsize": 10,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "term": coef.index,
+            "coef": coef.values,
+            "OR": np.exp(c),
+            "CI_low": np.exp(lo),
+            "CI_high": np.exp(hi),
+            "p_value": model.pvalues.values,
         }
     )
+    out = out.replace([np.inf, -np.inf], np.nan)
+    return out.round(4)
 
-    # =========================
-    # 0) Load data & sample
-    # =========================
-    df = pd.read_csv(csv_path)
-    df["ID"] = df["ID"].astype(str).str.strip()
 
-    if "Breachornot" not in df.columns:
-        raise KeyError("Expected column 'Breachornot' not found in the CSV.")
-    if "LoS" not in df.columns:
-        raise KeyError("Expected column 'LoS' not found in the CSV.")
-    if "Age" not in df.columns:
-        raise KeyError("Expected column 'Age' not found in the CSV.")
+# -----------------------------
+# Main
+# -----------------------------
+def solve_task5(
+    filepath: str = "data/AED4weeks.csv",
+    *,
+    seed: int = 123,
+    n_sample: int = 400,
+    los_target_min: int = 240,
+) -> Dict[str, Any]:
+    """
+    Task 5: Statistical analysis (dashboard-ready).
 
-    breach_raw = df["Breachornot"].astype(str).str.lower().str.strip()
-    df["Breach"] = breach_raw.isin(["breach", "yes", "y", "1", "true"])
+    Returns:
+      - summary, stats
+      - tables: includes Table 5.1/5.2/5.3 + describe + corr + VIF + logit coef tables
+      - figures: corr heatmap + LoS by breach + investigations by breach + breach rate by day
+      - logit_m1_summary / logit_m2_summary: text (or failure reason)
+      - sample, download_df
+    """
+    df = pd.read_csv(filepath)
+    sample = df.sample(n=n_sample, random_state=seed) if len(df) >= n_sample else df.copy()
 
-    sample = df.sample(n=sample_n, random_state=seed).copy()
+    # ---- Required columns ----
+    for c in ["Breachornot", "LoS"]:
+        if c not in sample.columns:
+            raise KeyError(f"Task 5 requires column '{c}'.")
 
-    breach_count = int(sample["Breach"].sum())
-    breach_rate_pct = breach_count / len(sample) * 100
+    # ---- Target ----
+    sample["breach"] = _breach_int(sample["Breachornot"])
 
-    # =========================
-    # Table 5.1 – Prolonged stay & KPIs
-    # =========================
-    prolonged_threshold = float(sample["LoS"].quantile(prolonged_quantile))
-    sample["Prolonged_Stay"] = sample["LoS"] >= prolonged_threshold
-    prolonged_rate_pct = float(sample["Prolonged_Stay"].mean() * 100)
+    # =============================
+    # A) Table 5.1: headline metrics
+    # =============================
+    los = sample["LoS"].dropna()
+    prolonged_threshold = float(np.percentile(los, 75)) if len(los) else float("nan")
+
+    breach_count = int(sample["breach"].fillna(0).sum())
+    breach_rate_pct = (
+        float(sample["breach"].mean() * 100) if sample["breach"].notna().any() else float("nan")
+    )
+    prolonged_rate_pct = (
+        float((sample["LoS"] >= prolonged_threshold).mean() * 100)
+        if np.isfinite(prolonged_threshold)
+        else float("nan")
+    )
 
     table_5_1 = pd.DataFrame(
         {
             "Metric": [
-                f"Prolonged threshold (LoS ≥ {int(prolonged_quantile * 100)}th percentile)",
+                "Prolonged threshold (LoS ≥ 75th percentile)",
                 "Prolonged stay rate (%)",
                 "4-hour target threshold (minutes)",
                 "Breach count",
@@ -77,210 +143,279 @@ def solve_task5(
                 "Random seed",
             ],
             "Value": [
-                round(prolonged_threshold, 2),
-                round(prolonged_rate_pct, 2),
-                los_target_min,
-                breach_count,
-                round(breach_rate_pct, 2),
-                len(sample),
-                seed,
+                prolonged_threshold,
+                prolonged_rate_pct,
+                float(los_target_min),
+                float(breach_count),
+                breach_rate_pct,
+                float(len(sample)),
+                float(seed),
             ],
         }
-    )
+    ).round(2)
 
-    # =========================
-    # Table 5.2 – Numeric comparisons (Mann–Whitney U)
-    # =========================
-    def mann_whitney_table(df_, outcome_col, features):
-        rows = []
-        for f in features:
-            if f not in df_.columns:
-                continue
-            g0 = df_.loc[~df_[outcome_col], f].dropna()
-            g1 = df_.loc[df_[outcome_col], f].dropna()
-            if len(g0) < 5 or len(g1) < 5:
-                continue
-            stat, p = stats.mannwhitneyu(g0, g1, alternative="two-sided")
-            rows.append(
-                {
-                    "Variable": f,
-                    "Median (Non-breach)": round(float(g0.median()), 2),
-                    "Median (Breach)": round(float(g1.median()), 2),
-                    "n (Non-breach)": int(len(g0)),
-                    "n (Breach)": int(len(g1)),
-                    "p-value": round(float(p), 4),
-                }
-            )
-        return pd.DataFrame(rows)
-
-    numeric_candidates = [
-        "LoS",
-        "Age",
-        "noofinvestigation",
-        "nooftreatment",
-        "noofpatients",
+    # =============================
+    # B) Table 5.2: Mann–Whitney U
+    # =============================
+    numeric_vars = [
+        v
+        for v in ["LoS", "Age", "noofpatients", "noofinvestigation", "nooftreatment"]
+        if v in sample.columns
     ]
-    table_5_2 = mann_whitney_table(sample, "Breach", numeric_candidates)
 
-    # =========================
-    # Table 5.3 – Categorical associations (Chi-square)
-    # =========================
-    def chi_square_table(df_, cat_vars, outcome_col="Breach"):
-        rows = []
-        for c in cat_vars:
-            if c not in df_.columns:
-                continue
-            ct = pd.crosstab(df_[c], df_[outcome_col])
-            if ct.shape[0] < 2 or ct.shape[1] < 2:
-                continue
-            chi2, p, dof, exp = stats.chi2_contingency(ct)
-            rows.append(
-                {
-                    "Variable": c,
-                    "Chi-square": round(float(chi2), 3),
-                    "dof": int(dof),
-                    "p-value": round(float(p), 4),
-                    "Min expected": round(float(np.min(exp)), 2),
-                    "Low expected?": bool(np.min(exp) < 5),
-                }
-            )
-        return pd.DataFrame(rows)
+    rows_5_2 = []
+    for v in numeric_vars:
+        a = sample.loc[sample["breach"] == 0, v].dropna()
+        b = sample.loc[sample["breach"] == 1, v].dropna()
 
-    cat_candidates = ["DayofWeek", "Period", "HRG"]
-    table_5_3 = chi_square_table(sample, cat_candidates, "Breach")
+        p = np.nan
+        if len(a) and len(b):
+            try:
+                _, p = mannwhitneyu(a, b, alternative="two-sided")
+            except Exception:
+                p = np.nan
 
-    # =========================
-    # Figures
-    # =========================
-    figs = {}
-
-    # ---- fig0: Overview (Age + LoS with target & KPI)
-    fig0, ax = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
-
-    ax[0].hist(sample["Age"].dropna(), bins=20, edgecolor="white")
-    ax[0].set_title("Patient Age Distribution")
-    ax[0].set_xlabel("Age (years)")
-    ax[0].set_ylabel("Number of patients")
-
-    ax[1].hist(sample["LoS"].dropna(), bins=25, edgecolor="white")
-    ax[1].axvline(
-        los_target_min,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"4-hour target ({los_target_min} min)",
-    )
-    ax[1].set_title("Length of Stay Relative to 4-Hour Target")
-    ax[1].set_xlabel("Length of Stay (minutes)")
-    ax[1].set_ylabel("Number of patients")
-    ax[1].legend(frameon=False)
-
-    fig0.text(
-        0.73,
-        0.93,
-        f"Breach count: {breach_count}\n"
-        f"Breach rate: {breach_rate_pct:.2f}% (target < 5%)",
-        ha="left",
-        va="top",
-        fontsize=11,
-    )
-
-    figs["fig0"] = fig0
-
-    # ---- fig1: 4-in-1 key driver panel (replaces separate fig1–fig4)
-    fig1, axes = plt.subplots(2, 2, figsize=(14, 9), constrained_layout=True)
-
-    # (A) LoS by Breach
-    sample.boxplot(
-        column="LoS",
-        by="Breach",
-        ax=axes[0, 0],
-        patch_artist=True,
-        boxprops=dict(facecolor="#D9E1F2"),
-        medianprops=dict(color="#1F4E79", linewidth=2),
-        whiskerprops=dict(linewidth=1.2),
-        capprops=dict(linewidth=1.2),
-    )
-    axes[0, 0].set_title("(A) Length of Stay by Breach Status")
-    axes[0, 0].set_xlabel("Breach")
-    axes[0, 0].set_ylabel("Length of Stay (minutes)")
-
-    # (B) Breach rate by Period
-    if "Period" in sample.columns:
-        breach_by_period = (
-            sample.groupby("Period")["Breach"].mean() * 100
-        ).sort_index()
-        breach_by_period.plot(kind="bar", ax=axes[0, 1])
-        axes[0, 1].set_title("(B) Breach Rate by Period")
-        axes[0, 1].set_xlabel("Period")
-        axes[0, 1].set_ylabel("Breach Rate (%)")
-        axes[0, 1].tick_params(axis="x", rotation=35)
-    else:
-        axes[0, 1].text(0.5, 0.5, "Period column not found", ha="center", va="center")
-        axes[0, 1].set_axis_off()
-
-    # (C) Breach rate by Day of Week
-    if "DayofWeek" in sample.columns:
-        breach_by_dow = (
-            sample.groupby("DayofWeek")["Breach"].mean() * 100
-        ).sort_values(ascending=False)
-        breach_by_dow.plot(kind="bar", ax=axes[1, 0])
-        axes[1, 0].set_title("(C) Breach Rate by Day of Week")
-        axes[1, 0].set_xlabel("Day of Week")
-        axes[1, 0].set_ylabel("Breach Rate (%)")
-        axes[1, 0].tick_params(axis="x", rotation=35)
-    else:
-        axes[1, 0].text(
-            0.5, 0.5, "DayofWeek column not found", ha="center", va="center"
+        rows_5_2.append(
+            {
+                "Variable": v,
+                "Median (Non-breach)": float(a.median()) if len(a) else np.nan,
+                "Median (Breach)": float(b.median()) if len(b) else np.nan,
+                "n (Non-breach)": int(len(a)),
+                "n (Breach)": int(len(b)),
+                "p-value": float(p) if np.isfinite(p) else np.nan,
+            }
         )
-        axes[1, 0].set_axis_off()
 
-    # (D) Investigations by Breach
-    if "noofinvestigation" in sample.columns:
-        sample.boxplot(
-            column="noofinvestigation",
-            by="Breach",
-            ax=axes[1, 1],
-            patch_artist=True,
-            boxprops=dict(facecolor="#E2EFDA"),
-            medianprops=dict(color="#1F4E79", linewidth=2),
-            whiskerprops=dict(linewidth=1.2),
-            capprops=dict(linewidth=1.2),
-        )
-        axes[1, 1].set_title("(D) Number of Investigations by Breach Status")
-        axes[1, 1].set_xlabel("Breach")
-        axes[1, 1].set_ylabel("Number of investigations")
-    else:
-        axes[1, 1].text(
-            0.5, 0.5, "noofinvestigation column not found", ha="center", va="center"
-        )
-        axes[1, 1].set_axis_off()
+    table_5_2 = pd.DataFrame(rows_5_2)
+    if not table_5_2.empty:
+        table_5_2["p-value"] = table_5_2["p-value"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "")
 
-    # Remove pandas boxplot auto suptitle, then set our own
-    fig1.suptitle(
-        "Figure 5.1: Key Factors Associated with 4-Hour Target Breaches in the AED",
-        fontsize=14,
+    # =============================
+    # C) Table 5.3: Chi-square tests
+    # =============================
+    cat_vars = [v for v in ["DayofWeek", "Period", "HRG"] if v in sample.columns]
+    rows_5_3 = []
+
+    for v in cat_vars:
+        tmp = sample.dropna(subset=[v, "breach"]).copy()
+        if tmp.empty:
+            continue
+
+        ct = pd.crosstab(tmp[v], tmp["breach"])
+        if 0 not in ct.columns:
+            ct[0] = 0
+        if 1 not in ct.columns:
+            ct[1] = 0
+        ct = ct[[0, 1]]
+
+        try:
+            chi2, p, dof, exp = chi2_contingency(ct.values)
+            exp_min = float(np.min(exp)) if exp.size else np.nan
+            low_expected = bool(exp_min < 5) if np.isfinite(exp_min) else False
+        except Exception:
+            chi2, p, dof, exp_min, low_expected = np.nan, np.nan, np.nan, np.nan, False
+
+        rows_5_3.append(
+            {
+                "Variable": v,
+                "Chi-square": float(chi2) if np.isfinite(chi2) else np.nan,
+                "dof": int(dof) if pd.notna(dof) else np.nan,
+                "p-value": float(p) if np.isfinite(p) else np.nan,
+                "Min expected": exp_min,
+                "Low expected?": low_expected,
+            }
+        )
+
+    table_5_3 = pd.DataFrame(rows_5_3).round(4)
+    if not table_5_3.empty:
+        table_5_3["p-value"] = table_5_3["p-value"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "")
+
+    # =============================
+    # D) Notebook-like modelling outputs
+    #    - describe, Spearman corr
+    #    - VIF
+    #    - logit m1, logit m2 (+ summaries)
+    # =============================
+    model_cols = [
+        c
+        for c in ["breach", "noofpatients", "noofinvestigation", "nooftreatment", "Age", "Period"]
+        if c in sample.columns
+    ]
+    model_df = sample[model_cols].dropna().copy()
+
+    model_df_describe = None
+    corr_matrix = None
+    vif_df = None
+
+    logit_m1_summary = None
+    logit_m2_summary = None
+    logit_m1_coef = None
+    logit_m2_coef = None
+
+    if not model_df.empty:
+        model_df_describe = model_df.describe().T.reset_index().rename(columns={"index": "variable"})
+
+        corr_vars = [c for c in ["noofpatients", "noofinvestigation", "nooftreatment", "Age"] if c in model_df.columns]
+        if len(corr_vars) >= 2:
+            corr_matrix = model_df[corr_vars].corr(method="spearman")
+
+        # ---- LOGIT + VIF ----
+        if not _HAS_SM:
+            logit_m1_summary = "Logit m1 skipped: statsmodels not installed in this environment."
+        else:
+            vc = model_df["breach"].value_counts(dropna=True)
+            has_both = (vc.get(0, 0) > 0) and (vc.get(1, 0) > 0)
+
+            if not has_both:
+                logit_m1_summary = (
+                    "Logit m1 skipped: target 'breach' has only one class in model_df.\n"
+                    f"value_counts:\n{vc.to_string()}"
+                )
+            elif len(model_df) < 20:
+                logit_m1_summary = f"Logit m1 skipped: too few rows after dropna (n={len(model_df)})."
+            else:
+                # m1 (your notebook)
+                try:
+                    m1 = smf.logit(
+                        "breach ~ noofpatients + noofinvestigation + nooftreatment + Age",
+                        data=model_df,
+                    ).fit(disp=False)
+                    logit_m1_summary = m1.summary().as_text()
+                    logit_m1_coef = _coef_table(m1)
+                except Exception as e:
+                    logit_m1_summary = f"Logit m1 failed: {type(e).__name__}: {e}"
+
+                # m2 (PeriodBlock)
+                if "Period" in model_df.columns:
+                    try:
+                        mdf2 = model_df.copy()
+                        mdf2["PeriodBlock"] = mdf2["Period"].apply(_time_block)
+                        m2 = smf.logit(
+                            "breach ~ noofpatients + noofinvestigation + nooftreatment + Age + C(PeriodBlock)",
+                            data=mdf2,
+                        ).fit(disp=False)
+                        logit_m2_summary = m2.summary().as_text()
+                        logit_m2_coef = _coef_table(m2)
+                    except Exception as e:
+                        logit_m2_summary = f"Logit m2 failed: {type(e).__name__}: {e}"
+
+                # VIF
+                try:
+                    need_vif = ["noofpatients", "noofinvestigation", "nooftreatment", "Age"]
+                    if all(c in model_df.columns for c in need_vif):
+                        X = model_df[need_vif].copy()
+                        X["Intercept"] = 1
+                        vif_df = pd.DataFrame(
+                            {
+                                "Variable": X.columns,
+                                "VIF": [
+                                    variance_inflation_factor(X.values, i)
+                                    for i in range(X.shape[1])
+                                ],
+                            }
+                        ).round(4)
+                except Exception:
+                    vif_df = None
+
+    # =============================
+    # E) Figures (ALL)
+    # =============================
+    figures: Dict[str, Any] = {}
+
+    # Fig 1: correlation heatmap
+    if corr_matrix is not None:
+        fig, ax = _new_fig()
+        sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm", center=0, ax=ax)
+        ax.set_title("Spearman Correlation Matrix of Numeric Predictors")
+        fig.tight_layout()
+        figures["corr_heatmap"] = fig
+
+    # Fig 2: LoS by breach
+    if sample["breach"].notna().any():
+        fig, ax = _new_fig()
+        tmp = sample.dropna(subset=["LoS", "breach"]).copy()
+        tmp["breach_label"] = tmp["breach"].map({0: "Non-breach", 1: "Breach"})
+        sns.boxplot(x="breach_label", y="LoS", data=tmp, ax=ax)
+        ax.set_xlabel("")
+        ax.set_ylabel("LoS (minutes)")
+        ax.set_title("LoS by Breach Status")
+        fig.tight_layout()
+        figures["los_by_breach_box"] = fig
+
+    # Fig 3: Investigations by breach
+    if "noofinvestigation" in sample.columns and sample["breach"].notna().any():
+        fig, ax = _new_fig()
+        tmp = sample.dropna(subset=["noofinvestigation", "breach"]).copy()
+        tmp["breach_label"] = tmp["breach"].map({0: "Non-breach", 1: "Breach"})
+        sns.boxplot(x="breach_label", y="noofinvestigation", data=tmp, ax=ax)
+        ax.set_xlabel("")
+        ax.set_ylabel("No. of investigations")
+        ax.set_title("Investigations by Breach Status")
+        fig.tight_layout()
+        figures["investigations_by_breach_box"] = fig
+
+    # Fig 4: breach rate by day of week
+    if "DayofWeek" in sample.columns and sample["breach"].notna().any():
+        fig, ax = _new_fig()
+        tmp = sample.dropna(subset=["DayofWeek", "breach"]).copy()
+        rate = tmp.groupby("DayofWeek")["breach"].mean().mul(100).sort_index()
+        ax.bar(rate.index.astype(str), rate.values)
+        ax.set_xlabel("DayofWeek")
+        ax.set_ylabel("Breach rate (%)")
+        ax.set_title("Breach Rate by Day of Week")
+        ax.tick_params(axis="x", rotation=30)
+        fig.tight_layout()
+        figures["breach_rate_by_dayofweek_bar"] = fig
+
+    # =============================
+    # F) Tables pack (include ALL)
+    # =============================
+    tables: Dict[str, Any] = {
+        "table_5_1": table_5_1,
+        "table_5_2": table_5_2,
+        "table_5_3": table_5_3,
+    }
+    if model_df_describe is not None:
+        tables["model_df_describe"] = model_df_describe
+    if corr_matrix is not None:
+        tables["corr_matrix_spearman"] = corr_matrix.reset_index().rename(
+            columns={"index": "variable"}
+        )
+    if vif_df is not None:
+        tables["vif_table"] = vif_df
+    if logit_m1_coef is not None:
+        tables["logit_m1_coef"] = logit_m1_coef
+    if logit_m2_coef is not None:
+        tables["logit_m2_coef"] = logit_m2_coef
+
+    summary = (
+        "Task 5 investigates factors associated with breaches/prolonged stays using a random sample (n=400). "
+        "Outputs include descriptive stats for modelling variables, Spearman correlation, VIF, and logistic regression "
+        "(where available), plus non-parametric group comparisons and chi-square tests."
     )
 
-    figs["fig1"] = fig1
+    stats = {
+        "seed": int(seed),
+        "sample_n": int(len(sample)),
+        "breach_count": int(breach_count),
+        "breach_rate_pct": round(breach_rate_pct, 2) if np.isfinite(breach_rate_pct) else breach_rate_pct,
+        "prolonged_threshold": round(prolonged_threshold, 2) if np.isfinite(prolonged_threshold) else prolonged_threshold,
+        "prolonged_rate_pct": round(prolonged_rate_pct, 2) if np.isfinite(prolonged_rate_pct) else prolonged_rate_pct,
+        "los_target_min": int(los_target_min),
+        "statsmodels_available": bool(_HAS_SM),
+        "model_df_rows_after_dropna": int(len(model_df)),
+    }
 
     return {
         "name": "Task 5",
-        "case": "AED statistical analysis",
-        "allocation": None,
+        "summary": summary,
+        "n": int(len(sample)),
+        "seed": int(seed),
+        "stats": stats,
+        "tables": tables,
+        "figures": figures,
+        "logit_m1_summary": logit_m1_summary,
+        "logit_m2_summary": logit_m2_summary,
         "sample": sample,
-        "tables": {
-            "table_5_1": table_5_1,
-            "table_5_2": table_5_2,
-            "table_5_3": table_5_3,
-        },
-        "stats": {
-            "breach_count": breach_count,
-            "breach_rate_pct": round(breach_rate_pct, 2),
-            "prolonged_threshold": round(prolonged_threshold, 2),
-            "prolonged_rate_pct": round(prolonged_rate_pct, 2),
-            "seed": seed,
-            "sample_n": sample_n,
-            "los_target_min": los_target_min,
-        },
-        "figures": figs,
+        "download_df": sample,
     }

@@ -1,12 +1,9 @@
-# === Core data handling ===
 import pandas as pd
 import numpy as np
 
-# === Visualisation ===
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# === Scikit-learn: model & preprocessing ===
 from sklearn.model_selection import (
     train_test_split,
     StratifiedKFold,
@@ -17,7 +14,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFECV
 
-# === Scikit-learn: evaluation ===
 from sklearn.metrics import (
     classification_report,
     confusion_matrix,
@@ -38,7 +34,6 @@ sns.set_style("whitegrid")
 
 def get_data(filepath: str):
     df = pd.read_csv(filepath)
-    print(f"[Data Load] Successfully loaded {len(df)} records.")
     return df
 
 
@@ -60,14 +55,10 @@ def clean_target_variable(x):
 def solve_task6(filepath: str = "data/AED4weeks.csv"):
     """
     Final classification model for Task 6:
-    - Logistic Regression (balanced)
+    - Logistic Regression
     - RFECV feature selection
     - Robust validation & diagnostics
     """
-
-    print("\n" + "=" * 80)
-    print("TASK 6: Final Model with Comprehensive Validation")
-    print("=" * 80)
 
     # === Figure collector (for Streamlit / dashboard integration) ===
     figures = []
@@ -113,7 +104,7 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
 
     # Train / test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=123, stratify=y
     )
 
     # Scaling
@@ -128,7 +119,7 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     # 2. Feature selection (RFECV)
     # ------------------------------------------------------------
     base_model = LogisticRegression(
-        class_weight="balanced", solver="liblinear", random_state=42
+        class_weight="balanced", solver="liblinear", random_state=123
     )
 
     rfecv = RFECV(
@@ -142,8 +133,6 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     rfecv.fit(X_train_df, y_train)
 
     selected_features = X_train_df.columns[rfecv.support_].tolist()
-    print(f"   >> Optimal Feature Count: {rfecv.n_features_}")
-    print(f"   >> Selected Features: {selected_features}")
 
     # --- Plot 1: RFECV performance ---
     plt.figure(figsize=(8, 6))
@@ -167,7 +156,7 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     X_test_final = X_test_df[selected_features]
 
     final_model = LogisticRegression(
-        class_weight="balanced", solver="liblinear", random_state=42
+        class_weight="balanced", solver="liblinear", random_state=123
     )
     final_model.fit(X_train_final, y_train)
 
@@ -182,10 +171,6 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     report_txt = classification_report(
         y_test, y_pred, target_names=["On Time", "Breach"]
     )
-
-    print("\nMODEL PERFORMANCE REPORT")
-    print(f"Test Accuracy: {acc:.2%}")
-    print(report_txt)
 
     # --- Plot 2: Confusion matrix ---
     plt.figure(figsize=(6, 5))
@@ -224,7 +209,14 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     ).sort_values("Odds_Ratio", ascending=False)
 
     plt.figure(figsize=(10, 6))
-    sns.barplot(x="Odds_Ratio", y="Feature", data=odds_df, palette="viridis")
+    sns.barplot(
+        x="Odds_Ratio",
+        y="Feature",
+        data=odds_df,
+        hue="Feature",
+        legend=False,
+        palette="viridis",
+    )
     plt.axvline(x=1, color="red", linestyle="--", label="Neutral (OR=1)")
     plt.title("Odds Ratio Analysis (Risk Factors)")
     plt.xlabel("Odds Ratio (Values > 1 indicate higher risk)")
@@ -235,16 +227,13 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     # ------------------------------------------------------------
     # 5. Robustness checks
     # ------------------------------------------------------------
-    cv = StratifiedKFold(5, shuffle=True, random_state=42)
+    cv = StratifiedKFold(5, shuffle=True, random_state=123)
     cv_recall = cross_val_score(
         final_model, X_train_final, y_train, cv=cv, scoring="recall"
     )
     cv_auc = cross_val_score(
         final_model, X_train_final, y_train, cv=cv, scoring="roc_auc"
     )
-
-    print(f"   >> 5-Fold Recall Mean: {cv_recall.mean():.2%}")
-    print(f"   >> 5-Fold ROC-AUC Mean: {cv_auc.mean():.4f}")
 
     # --- Plot 5: CV stability ---
     plt.figure(figsize=(6, 6))
@@ -272,9 +261,19 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
     )
 
     plt.figure(figsize=(8, 6))
-    plt.plot(train_sizes, train_scores.mean(axis=1), "o-", color="r", label="Training Recall")
-    plt.plot(test_scores.mean(axis=1),)
-    plt.plot(train_sizes, test_scores.mean(axis=1), "o-", color="g", label="Validation Recall")
+    plt.plot(
+        train_sizes, train_scores.mean(axis=1), "o-", color="r", label="Training Recall"
+    )
+    plt.plot(
+        test_scores.mean(axis=1),
+    )
+    plt.plot(
+        train_sizes,
+        test_scores.mean(axis=1),
+        "o-",
+        color="g",
+        label="Validation Recall",
+    )
 
     train_std = train_scores.std(axis=1)
     test_std = test_scores.std(axis=1)
@@ -317,23 +316,16 @@ def solve_task6(filepath: str = "data/AED4weeks.csv"):
         "odds_ratio_table": odds_df,
         "cv_recall": cv_recall,
         "cv_auc": cv_auc,
-        "figures": {
-            f"fig{i}": fig for i, fig in enumerate(figures)
-        },
+        "figures": {f"fig{i}": fig for i, fig in enumerate(figures)},
         "tables": {
             "odds_ratio": odds_df.reset_index(drop=True),
-
             "confusion_matrix": pd.DataFrame(
                 cm,
                 index=["Actual_OnTime", "Actual_Breach"],
                 columns=["Pred_OnTime", "Pred_Breach"],
             ),
-
             "cv_recall": pd.DataFrame({"recall": cv_recall}),
             "cv_auc": pd.DataFrame({"roc_auc": cv_auc}),
-
-            "selected_features": pd.DataFrame(
-                {"feature": selected_features}
-            ),
+            "selected_features": pd.DataFrame({"feature": selected_features}),
         },
     }

@@ -68,6 +68,15 @@ def solve_task3(baseline_cost):
             ),
         }
 
+    tables = {
+        "skill_coverage": (
+            pd.DataFrame(skill_coverage)
+            .T
+            .reset_index()
+            .rename(columns={"index": "Day"})
+        )
+    }
+
     results = {
         "name": "Task 3",
         "allocation": allocation,
@@ -76,7 +85,7 @@ def solve_task3(baseline_cost):
         "cost_increase_pct": cost_increase_pct,
         "gap": None,
         "skill_coverage": skill_coverage,
+        "tables": tables,
     }
 
     return results
-

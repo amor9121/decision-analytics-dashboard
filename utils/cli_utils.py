@@ -1,8 +1,32 @@
 import numpy as np
+import pandas as pd
+
+
+def _print_schedule_table(allocation, days, wage, title="Final schedule table"):
+    if allocation is None:
+        return
+
+    table = allocation.copy()
+
+    table["Weekly Total"] = table[days].sum(axis=1)
+    table["Hourly Wage (£)"] = table.index.map(lambda i: wage.get(i, ""))
+    table["Weekly Wage (£)"] = table.index.map(
+        lambda i: (table.loc[i, "Weekly Total"] * wage[i]) if i in wage else ""
+    )
+
+    daily = table[days].sum(axis=0)
+    daily["Weekly Total"] = table["Weekly Total"].sum()
+    daily["Hourly Wage (£)"] = ""
+    daily["Weekly Wage (£)"] = table["Weekly Wage (£)"].sum()
+
+    table.loc["Daily Total"] = daily
+    table = table.round(2)
+
+    print(f"\n{title}:")
+    print(table)
 
 
 def print_task1_2(r: dict, days, wage):
-    print("\n[Tasks 1–2] Scheduling & cost scenarios")
 
     if r.get("status") is not None:
         print("Status:", r.get("status"))
@@ -15,84 +39,135 @@ def print_task1_2(r: dict, days, wage):
 
     allocation = r.get("allocation")
     if allocation is not None:
-        table = allocation.copy()
-
-        table["Weekly Total"] = table[days].sum(axis=1)
-        table["Hourly Wage (£)"] = table.index.map(lambda i: wage.get(i, ""))
-        table["Weekly Wage (£)"] = table.index.map(
-            lambda i: (table.loc[i, "Weekly Total"] * wage[i]) if i in wage else ""
-        )
-
-        daily = table[days].sum(axis=0)
-        daily["Weekly Total"] = table["Weekly Total"].sum()
-        daily["Hourly Wage (£)"] = ""
-        daily["Weekly Wage (£)"] = table["Weekly Wage (£)"].sum()
-
-        table.loc["Daily Total"] = daily
-        table = table.round(2)
-
-        print("\nFinal schedule table:")
-        print(table)
+        _print_schedule_table(allocation, days, wage, title="Final schedule table")
 
 
-def print_task3(r: dict):
-    print("\n[Task 3] Optimisation & coverage")
+def print_task3(r: dict, days, wage):
 
+    # ---- headline metrics ----
     if r.get("gap") is not None:
         print("Fairness gap:", r.get("gap"))
 
+    # ---- skill coverage ----
     if r.get("skill_coverage") is not None:
         print("\nSkill coverage per day:")
         for d, cov in r["skill_coverage"].items():
-            print(
-                f"{d}: Programming={cov['Programming']:.2f}, "
-                f"Troubleshooting={cov['Troubleshooting']:.2f}"
-            )
+            prog = cov.get("Programming", None)
+            trb = cov.get("Troubleshooting", None)
+            if isinstance(prog, (int, float)) and isinstance(trb, (int, float)):
+                print(f"{d}: Programming={prog:.2f}, Troubleshooting={trb:.2f}")
+            else:
+                print(f"{d}: {cov}")
+
+    # ---- skill match (whatever your Task3 already provides) ----
+    skill_match = r.get("skill_match")
+    if skill_match is None and isinstance(r.get("tables"), dict):
+        skill_match = r["tables"].get("skill_match")
+
+    if skill_match is not None:
+        print("\nSkill match:")
+        if isinstance(skill_match, pd.DataFrame):
+            print(skill_match)
+        elif isinstance(skill_match, dict):
+            try:
+                print(pd.DataFrame(skill_match))
+            except Exception:
+                print(skill_match)
+        else:
+            print(skill_match)
+
+    #  ---- print schedule table  ----
+    allocation = r.get("allocation")
+    if allocation is None and isinstance(r.get("tables"), dict):
+        allocation = r["tables"].get("allocation")
+
+    if allocation is not None:
+        _print_schedule_table(allocation, days, wage, title="Final schedule table")
 
 
 def print_task4(r: dict):
-    print("\n[Task 4] Descriptive analysis")
 
-    if r.get("breach_rate_pct") is not None:
-        print("Breach rate (%):", r.get("breach_rate_pct"))
+    br = r.get("breach_rate_pct", None)
+    if isinstance(br, (int, float)):
+        print(f"\nBreach rate (%): {br:.2f}")
 
     if r.get("breach_counts") is not None:
         print("\nBreach counts:")
-        print(r["breach_counts"])
+        print(r["breach_counts"].to_string(index=False))
 
     if r.get("kpi_table") is not None:
         print("\nKPI table:")
-        print(r["kpi_table"])
+        print(r["kpi_table"].to_string(index=False))
 
     if r.get("age_summary") is not None:
         print("\nAge summary:")
-        print(r["age_summary"])
+        print(r["age_summary"].to_string())
 
     if r.get("los_summary") is not None:
         print("\nLoS summary:")
-        print(r["los_summary"])
+        print(r["los_summary"].to_string())
 
-    if r.get("summary") is not None:
-        print("\nSummary text:")
+    figs = r.get("figures", None)
+    if isinstance(figs, dict):
+        print(f"\nFigures generated: {len(figs)}")
+        for k in figs.keys():
+            print(" -", k)
+
+    if r.get("summary"):
+        print("\nSummary:")
         print(r["summary"])
 
 
 def print_task5(r: dict):
     print("\n[Task 5] Statistical analysis")
 
-    if r.get("stats") is not None:
+    # ---- Summary ----
+    if r.get("summary"):
+        print("\nSummary:")
+        print(r["summary"])
+
+    # ---- Stats ----
+    stats = r.get("stats", {})
+    if isinstance(stats, dict) and stats:
         print("\nStats:")
-        for k, v in r["stats"].items():
+        for k, v in stats.items():
             print(f"- {k}: {v}")
 
-    if r.get("tables") is not None:
+    # ---- Tables (ALL) ----
+    tables = r.get("tables", {})
+    if isinstance(tables, dict) and tables:
         print("\nTables:")
-        for name, t in r["tables"].items():
+        for name, t in tables.items():
             print(f"\n{name}:")
-            print(t)
+            try:
+                # Works for pandas DataFrame/Series
+                if hasattr(t, "to_string"):
+                    print(t.to_string(index=False))
+                else:
+                    print(t)
+            except Exception as e:
+                print(f"[Could not print table '{name}']: {type(e).__name__}: {e}")
+                print(t)
+    else:
+        print("\n[No tables found]")
 
-    if r.get("figures") is not None:
-        print("\nFigures generated (see plots)")
+    # ---- Logit summaries (text) ----
+    if r.get("logit_m1_summary"):
+        print("\nlogit_m1_summary:")
+        print(r["logit_m1_summary"])
+
+    if r.get("logit_m2_summary"):
+        print("\nlogit_m2_summary:")
+        print(r["logit_m2_summary"])
+
+    # ---- Figures ----
+    figs = r.get("figures", {})
+    if isinstance(figs, dict):
+        print(f"\nFigures generated: {len(figs)}")
+        for k in figs.keys():
+            print(" -", k)
+    else:
+        print("\nFigures: not available")
 
 
 def print_task6(r: dict):
@@ -154,11 +229,16 @@ def print_results(results, days, wage):
 
         name = r.get("name", "")
 
-        if name in ["Task 1", "Task 2", "Task 2 - Scenario 1", "Task 2 - Scenario 2"]:
+        if name in [
+            "Task 1",
+            "Task 2",
+            "Task 2 - Senerio 1",
+            "Task 2 - Senerio 2",
+        ]:
             print_task1_2(r, days, wage)
 
-        elif name == "Task 3":
-            print_task3(r)
+        elif name in ["Task 3"]:
+            print_task3(r, days, wage)
 
         elif name == "Task 4":
             print_task4(r)
@@ -168,3 +248,8 @@ def print_results(results, days, wage):
 
         elif name == "Task 6":
             print_task6(r)
+
+        else:
+            # fallback: don't fail silently
+            print("[Unknown result type]")
+            print("Available keys:", sorted(list(r.keys())))

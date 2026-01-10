@@ -1,165 +1,309 @@
+# tasks/task4.py
+from __future__ import annotations
+
+from typing import Dict, Any, Tuple
+import os
+
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from utils.data_tidy import tidy_aed_data
 
 
-# -----------------------------
-# Task 4 – AED Sample Analysis
-# -----------------------------
-def solve_task4(csv_path="data/AED4weeks.csv", seed=123, n=400):
+def _new_fig(figsize: Tuple[float, float] = (5.5, 3.5)):
+    fig, ax = plt.subplots(figsize=figsize)
+    return fig, ax
 
-    # load data
-    aed = pd.read_csv(csv_path)
-    aed.columns = aed.columns.str.strip()
-    sample = aed.sample(n=n, random_state=seed).copy()
 
-    # data tidying check
-    aed, tidy_summary = tidy_aed_data(aed)
+def _safe_corr(df: pd.DataFrame, x: str, y: str) -> float:
+    tmp = df[[x, y]].dropna()
+    if len(tmp) < 2:
+        return float("nan")
+    return float(tmp.corr().iloc[0, 1])
 
-    # preproccesing
-    # [P1]Numeric type coercion
-    numeric_cols = [
-        "Age",
-        "Day",
-        "Period",
-        "LoS",
-        "noofinvestigation",
-        "nooftreatment",
-        "noofpatients",
-    ]
-    for col in numeric_cols:
-        if col in sample.columns:
-            sample[col] = pd.to_numeric(sample[col], errors="coerce")
 
-    # [P2] Outcome variable preprocessing (binary encoding)
-    breach_str = sample["Breachornot"].astype(str).str.lower()
-    sample["is_breach"] = breach_str.str.contains("breach") & ~breach_str.str.contains(
-        "non"
-    )
-    # [P3] Feature engineering: clinical complexity proxy
-    sample["clinical_complexity"] = sample["noofinvestigation"].fillna(0) + sample[
-        "nooftreatment"
-    ].fillna(0)
+def _load_df(df_or_path):
+    if df_or_path is None:
+        path = "data/AED4weeks.csv"
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"[Task 4] Default dataset not found: {path}. "
+                "Pass a DataFrame or a path explicitly."
+            )
+        return pd.read_csv(path)
 
-    # descriptive summaries
-    age_summary = sample[["Age"]].describe()
-    los_summary = sample[["LoS"]].describe()
-    breach_counts = sample["Breachornot"].value_counts(dropna=False)
-    breach_rate_pct = round(sample["is_breach"].mean() * 100, 2)
+    if isinstance(df_or_path, str):
+        return pd.read_csv(df_or_path)
 
-    # KPI table (optional but nice)
-    kpi_table = (
-        sample.groupby("is_breach")
-        .agg(
-            n=("ID", "count") if "ID" in sample.columns else ("LoS", "count"),
-            median_LoS=("LoS", "median"),
-            mean_LoS=("LoS", "mean"),
-            median_patients_on_arrival=("noofpatients", "median"),
-            mean_investigations=("noofinvestigation", "mean"),
-            mean_treatments=("nooftreatment", "mean"),
-            mean_clinical_complexity=("clinical_complexity", "mean"),
+    if isinstance(df_or_path, pd.DataFrame):
+        return df_or_path.copy()
+
+    raise TypeError("solve_task4 expects None, a DataFrame, or a CSV path.")
+
+
+def _standardise_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Make column names robust (so CSV/notebook naming differences won't break Task 4).
+    Only maps what Task 4 needs.
+    """
+    aliases = {
+        "Age": ["Age", "age"],
+        "LoS": ["LoS", "LOS", "Length of Stay", "length_of_stay"],
+        "noofinvestigation": [
+            "noofinvestigation",
+            "No. of investigations",
+            "Investigations",
+        ],
+        "nooftreatment": ["nooftreatment", "No. of treatments", "Treatments"],
+        "Day": ["Day"],
+        "DayofWeek": ["DayofWeek", "Day of week", "Day_of_week"],
+        "Period": ["Period", "Hour", "Arrival hour"],
+        "Breachornot": ["Breachornot", "Breach or not", "Breach"],
+        "noofpatients": ["noofpatients", "Number of patients", "Patients"],
+        "HRG": ["HRG"],
+    }
+
+    rename_map = {}
+    for canonical, candidates in aliases.items():
+        for c in candidates:
+            if c in df.columns:
+                rename_map[c] = canonical
+                break
+
+    df = df.rename(columns=rename_map)
+
+    required = list(aliases.keys())
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise KeyError(
+            f"[Task 4] Missing required columns: {missing}. "
+            f"Available columns: {list(df.columns)}"
         )
-        .rename(index={False: "Non-breach", True: "Breach"})
+    return df
+
+
+def solve_task4(
+    df_or_path=None,
+    *,
+    seed: int = 123,
+    n_sample: int = 400,
+) -> Dict[str, Any]:
+    """
+    Task 4 (simple output):
+    - works with solve_task4(), solve_task4(df), solve_task4("path.csv")
+    - returns only the keys your app/CLI needs
+    - keeps ALL figures
+    """
+    df = _standardise_columns(_load_df(df_or_path))
+
+    # sample
+    sample = df.sample(
+        n=min(n_sample, len(df)), random_state=seed, replace=False
+    ).copy()
+
+    # breach rate (%)
+    breach_props = (
+        sample["Breachornot"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .value_counts(normalize=True)
+        * 100
+    )
+    breach_rate_pct = float(breach_props.get("breach", np.nan))
+
+    # breach counts
+    breach_counts = (
+        sample["Breachornot"]
+        .value_counts(dropna=False)
+        .rename("count")
+        .reset_index()
+        .rename(columns={"index": "Breachornot"})
     )
 
-    # visualization
-    # Figure 1
-    fig1, axes = plt.subplots(2, 2, figsize=(14, 11))
+    # summaries (nice for dashboard)
+    age_summary = sample["Age"].describe().to_frame(name="Age").round(2)
+    los_summary = sample["LoS"].describe().to_frame(name="LoS (minutes)").round(2)
 
-    sns.histplot(sample["LoS"].dropna(), bins=30, kde=True, ax=axes[0, 0])
-    axes[0, 0].set_title("(a) Distribution of Length of Stay")
-    axes[0, 0].set_xlabel("Length of Stay (minutes)")
-    axes[0, 0].set_ylabel("Density")
+    # correlations (for KPI table)
+    corr_patients_los = _safe_corr(sample, "noofpatients", "LoS")
+    corr_invest_los = _safe_corr(sample, "noofinvestigation", "LoS")
 
-    sns.boxplot(x="Breachornot", y="LoS", data=sample, ax=axes[0, 1])
-    axes[0, 1].set_title("(b) Length of Stay by Breach Status")
-    axes[0, 1].set_xlabel("Breach Status")
-    axes[0, 1].set_ylabel("Length of Stay (minutes)")
-
-    sns.scatterplot(x="noofpatients", y="LoS", data=sample, alpha=0.6, ax=axes[1, 0])
-    axes[1, 0].set_title("(c) ED Congestion and Length of Stay")
-    axes[1, 0].set_xlabel("Number of Patients in ED on Arrival")
-    axes[1, 0].set_ylabel("Length of Stay (minutes)")
-
-    sns.boxplot(x="Period", y="LoS", data=sample, showfliers=False, ax=axes[1, 1])
-    axes[1, 1].set_title("(d) Length of Stay by Arrival Period")
-    axes[1, 1].set_xlabel("Arrival Period (0–23)")
-    axes[1, 1].set_ylabel("Length of Stay (minutes)")
-
-    fig1.suptitle(
-        f"Figure 1. Key Features and Relationships in a Random Sample (n = {n})",
-        fontsize=14,
+    kpi_table = pd.DataFrame(
+        {
+            "Metric": [
+                "Sample size",
+                "Random seed",
+                "Breach rate (%)",
+                "Corr(no. patients, LoS)",
+                "Corr(no. investigations, LoS)",
+            ],
+            "Value": [
+                int(len(sample)),
+                int(seed),
+                round(breach_rate_pct, 2) if np.isfinite(breach_rate_pct) else np.nan,
+                round(corr_patients_los, 3),
+                round(corr_invest_los, 3),
+            ],
+        }
     )
-    fig1.tight_layout(rect=[0, 0, 1, 0.96])
 
-    # Figure 2
-    fig2, axes2 = plt.subplots(2, 2, figsize=(14, 11))
+    # ---- breach rate by period (for 2 plots) ----
+    b = sample["Breachornot"].astype(str).str.strip().str.lower()
+    breach_int = b.map({"breach": 1, "non-breach": 0})
+    tmp = sample.copy()
+    tmp["Breachornot_int"] = pd.to_numeric(breach_int, errors="coerce")
 
-    sns.histplot(sample["Age"].dropna(), bins=30, ax=axes2[0, 0])
-    axes2[0, 0].set_title("(a) Age Distribution")
-    axes2[0, 0].set_xlabel("Age (years)")
-    axes2[0, 0].set_ylabel("Number of patients")
-
-    breach_counts.plot(kind="bar", ax=axes2[0, 1])
-    axes2[0, 1].set_title("(b) Breach Status Counts")
-    axes2[0, 1].set_xlabel("Breach Status")
-    axes2[0, 1].set_ylabel("Number of patients")
-
-    breach_rate_by_period = (
-        sample.groupby("Period")["is_breach"].mean().sort_index() * 100
+    breach_by_period = (
+        tmp.dropna(subset=["Period", "Breachornot_int"])
+        .groupby("Period")["Breachornot_int"]
+        .mean()
+        .mul(100)
+        .sort_index()
     )
-    axes2[1, 0].plot(
-        breach_rate_by_period.index, breach_rate_by_period.values, marker="o"
-    )
-    axes2[1, 0].set_title("(c) Breach Rate by Arrival Period")
-    axes2[1, 0].set_xlabel("Arrival Period (0–23)")
-    axes2[1, 0].set_ylabel("Breach rate (%)")
-    axes2[1, 0].set_xticks(range(0, 24, 2))
 
-    # NEW: breach rate by DayofWeek (if present)
-    if "DayofWeek" in sample.columns:
-        breach_by_dow = (
-            sample.groupby("DayofWeek")["is_breach"].mean().sort_values(ascending=False)
-            * 100
-        )
-        breach_by_dow.plot(kind="bar", ax=axes2[1, 1])
-        axes2[1, 1].set_title("(d) Breach Rate by Day of Week")
-        axes2[1, 1].set_xlabel("Day of Week")
-        axes2[1, 1].set_ylabel("Breach rate (%)")
-    else:
-        sns.scatterplot(
-            x="clinical_complexity", y="LoS", data=sample, alpha=0.6, ax=axes2[1, 1]
-        )
-        axes2[1, 1].set_title("(d) Clinical Complexity vs Length of Stay")
-        axes2[1, 1].set_xlabel("Investigations + Treatments (count)")
-        axes2[1, 1].set_ylabel("Length of Stay (minutes)")
+    # ---- figures (ALL) ----
+    figures: Dict[str, Any] = {}
 
-    fig2.suptitle(
-        f"Figure 2. Additional Descriptive Insights (n = {n})",
-        fontsize=14,
-    )
-    fig2.tight_layout(rect=[0, 0, 1, 0.96])
+    # 1) Age histogram
+    fig, ax = _new_fig()
+    ax.hist(sample["Age"].dropna(), bins=30)
+    ax.set_xlabel("Age in Years")
+    ax.set_ylabel("Number of patients")
+    ax.set_title("Age wise distribution of Patients")
+    figures["age_hist"] = fig
 
-    summary_text = (
-        f"The sample contains {n} patients (random seed = {seed}). "
-        f"The breach rate is {breach_rate_pct}%. "
-        "Length of stay is right-skewed; breaches are associated with longer stays. "
-        "Congestion and arrival timing show visible differences in LoS and breach patterns."
+    # 2) LoS histogram
+    fig, ax = _new_fig()
+    ax.hist(sample["LoS"].dropna(), bins=50)
+    ax.set_xlabel("Length of Stay")
+    ax.set_ylabel("Number of Patients")
+    ax.set_title("Distribution of Length of Stay")
+    figures["los_hist"] = fig
+
+    # 3) LoS boxplot
+    fig, ax = _new_fig()
+    ax.boxplot(sample["LoS"].dropna(), vert=False)
+    ax.set_xlabel("Length of Stay")
+    ax.set_title("Boxplot of LoS")
+    figures["los_box"] = fig
+
+    # 4) noofinvestigation histogram
+    fig, ax = _new_fig()
+    ax.hist(sample["noofinvestigation"].dropna(), bins=30)
+    ax.set_xlabel("No. of Investigations")
+    ax.set_ylabel("Number of Patients")
+    ax.set_title("No. of Investigations for Patients")
+    figures["investigation_hist"] = fig
+
+    # 5) nooftreatment histogram
+    fig, ax = _new_fig()
+    ax.hist(sample["nooftreatment"].dropna(), bins=10)
+    ax.set_xlabel("No. of Treatments")
+    ax.set_ylabel("Number of Patients")
+    ax.set_title("No. of Treatments for Patients")
+    figures["treatment_hist"] = fig
+
+    # 6) arrivals over study period
+    fig, ax = _new_fig()
+    day_series = sample["Day"].value_counts(dropna=False).sort_index()
+    ax.plot(day_series.index, day_series.values)
+    ax.set_ylabel("Number of Patients")
+    ax.set_title("Patient Arrivals Over Study Period")
+    figures["arrivals_day_line"] = fig
+
+    # 7) arrivals by day of week
+    fig, ax = _new_fig()
+    day_count = sample["DayofWeek"].value_counts(dropna=False)
+    ax.bar(day_count.index.astype(str), day_count.values)
+    ax.set_xlabel("Day of week")
+    ax.set_ylabel("Number of patients")
+    ax.set_title("Arrivals by day of week")
+    ax.tick_params(axis="x", rotation=30)
+    figures["arrivals_dow_bar"] = fig
+
+    # 8) arrivals by time of day
+    fig, ax = _new_fig()
+    period_count = sample["Period"].value_counts(dropna=False).sort_index()
+    ax.bar(period_count.index.astype(str), period_count.values)
+    ax.set_xlabel("Hour of Arrival")
+    ax.set_ylabel("Number of Patients")
+    ax.set_title("Arrivals by time of day")
+    figures["arrivals_period_bar"] = fig
+
+    # 9) crowding vs LoS
+    fig, ax = _new_fig()
+    ax.scatter(sample["noofpatients"], sample["LoS"], alpha=0.6)
+    ax.set_xlabel("Number of patients already in AED")
+    ax.set_ylabel("Length of Stay (minutes)")
+    ax.set_title("Crowding vs Length of Stay")
+    figures["crowding_vs_los_scatter"] = fig
+
+    # 10) investigations vs LoS
+    fig, ax = _new_fig()
+    ax.scatter(sample["noofinvestigation"], sample["LoS"], alpha=0.6)
+    ax.set_xlabel("Number of Investigations")
+    ax.set_ylabel("Length of Stay")
+    ax.set_title("Investigations vs Length of Stay")
+    figures["investigation_vs_los_scatter"] = fig
+
+    # 11) breach rate by time of day (bar)
+    fig, ax = _new_fig()
+    if len(breach_by_period):
+        ax.bar(breach_by_period.index.astype(str), breach_by_period.values)
+    ax.set_xlabel("Hour of arrival (0–23)")
+    ax.set_ylabel("Breach rate (%)")
+    ax.set_title("Breach rate by time of day (bar)")
+    figures["breach_rate_by_period_bar"] = fig
+
+    # 12) breach rate by time of day (line)
+    fig, ax = _new_fig()
+    if len(breach_by_period):
+        ax.plot(breach_by_period.index, breach_by_period.values, marker="o")
+    ax.set_xlabel("Hour of arrival (0–23)")
+    ax.set_ylabel("Breach rate (%)")
+    ax.set_title("Breach rate by time of day (line)")
+    figures["breach_rate_by_period_line"] = fig
+
+    # 13) LoS by breach status
+    fig, ax = _new_fig()
+    g = sample.dropna(subset=["Breachornot", "LoS"]).groupby("Breachornot")
+    groups, labels = [], []
+    for k, sub in g:
+        labels.append(str(k))
+        groups.append(sub["LoS"].values)
+    if groups:
+        ax.boxplot(groups, labels=labels)
+    ax.set_xlabel("Breach status")
+    ax.set_ylabel("Length of Stay (minutes)")
+    ax.set_title("Length of Stay by Breach Status")
+    figures["los_by_breach_box"] = fig
+
+    summary = (
+        "Descriptive overview of a random AED sample (n=400), showing outcome distribution, "
+        "key variable summaries, time patterns, and core relationships with length of stay."
     )
+
+    tables = {
+        "breach_counts": breach_counts,
+        "kpi_table": kpi_table,
+        "age_summary": age_summary,
+        "los_summary": los_summary,
+    }
+
+    # ---- print_task4 ----
 
     return {
         "name": "Task 4",
-        "case": "AED descriptive analysis (random sample n=400)",
-        "allocation": None,
-        "sample": sample,
-        "tidy_summary": tidy_summary,
+        "n": int(len(sample)),
+        "seed": int(seed),
+        "summary": summary,
+        "breach_rate_pct": breach_rate_pct,
+        "breach_counts": breach_counts,
+        "kpi_table": kpi_table,
         "age_summary": age_summary,
         "los_summary": los_summary,
-        "breach_counts": breach_counts,
-        "breach_rate_pct": breach_rate_pct,
-        "kpi_table": kpi_table,
-        "fig1": fig1,
-        "fig2": fig2,
-        "summary": summary_text,
+        "tables": tables,
+        "figures": figures,
+        "sample": sample,
+        "download_df": sample,
     }
