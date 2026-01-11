@@ -1,18 +1,18 @@
 ## 🌐 Live Demo
 
-- GitHub Repository: https://github.com/amor9121/decision-analytics-dashboard/
 - Deployed Application: https://decision-analytics-dashboard.streamlit.app/
+- GitHub Repository: https://github.com/amor9121/decision-analytics-dashboard/
 
 ## 🚀 How to Run the Application
 
-1. Install Streamlit:
-   ```bash
-   pip install streamlit
-   ```
-
-2. Navigate to the project directory:
+1. Navigate to the project directory:
    ```bash
    cd decision-analytics-dashboard
+   ```
+
+2. Install the required Python packages:
+   ```bash
+   pip install -r requirements.txt
    ```
 
 3. Run the application:
