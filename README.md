@@ -16,17 +16,25 @@ The application integrates optimisation, statistical analysis, and machine learn
 
 ## 🚀 How to Run the Application
 
-1. Navigate to the project directory:
+1. Download the project from the repository:
+   - Click **Code → Download ZIP**, then extract the files  
+   **or**
+   - Clone the repository:
+     ```bash
+     git clone https://github.com/your-username/decision-analytics-dashboard.git
+     ```
+
+2. Navigate to the project directory:
    ```bash
    cd decision-analytics-dashboard
    ```
 
-2. Install the required Python packages:
+3. Install the required Python packages:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Run the application:
+4. Run the application:
    ```bash
    streamlit run app.py
    ```
