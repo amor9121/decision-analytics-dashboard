@@ -21,7 +21,7 @@ The application integrates optimisation, statistical analysis, and machine learn
    **or**
    - Clone the repository:
      ```bash
-     git clone https://github.com/your-username/decision-analytics-dashboard.git
+     git clone https://github.com/amor9121/decision-analytics-dashboard.git
      ```
 
 2. Navigate to the project directory:
