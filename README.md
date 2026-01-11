@@ -1,7 +1,18 @@
+---
+
+# 📊 Decision Analytics Dashboard
+
+An interactive decision analytics dashboard developed as part of the **Python Programming for Business Intelligence & Analytics** coursework.  
+The application integrates optimisation, statistical analysis, and machine learning into a single Streamlit-based interface, with an emphasis on **reproducibility, auditability, and decision support**.
+
+---
+
 ## 🌐 Live Demo
 
 - Deployed Application: https://decision-analytics-dashboard.streamlit.app/
 - GitHub Repository: https://github.com/amor9121/decision-analytics-dashboard/
+
+---
 
 ## 🚀 How to Run the Application
 
@@ -21,13 +32,6 @@
    ```
 
 The application will open automatically in your web browser.
-
----
-
-# 📊 Decision Analytics Dashboard
-
-An interactive decision analytics dashboard developed as part of the **Python Programming for Business Intelligence & Analytics** coursework.  
-The application integrates optimisation, statistical analysis, and machine learning into a single Streamlit-based interface, with an emphasis on **reproducibility, auditability, and decision support**.
 
 ---
 
