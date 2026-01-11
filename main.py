@@ -1,4 +1,3 @@
-import sys
 from contextlib import redirect_stdout
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning

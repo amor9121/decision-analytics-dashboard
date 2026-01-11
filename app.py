@@ -31,7 +31,7 @@ from utils.export_utils import (
     single_task_csv_text,
     all_tasks_zip_bytes,
     ensure_task_row,
-    task_bundle_zip_bytes
+    task_bundle_zip_bytes,
 )
 from utils.state_utils import init_state
 from contextlib import redirect_stdout
@@ -105,9 +105,9 @@ def run_all_cached():
     if isinstance(figs, list):
         t6["figures"] = {f"fig{i}": fig for i, fig in enumerate(figs)}
     t6["case"] = "Prediction (ML)"
-    t6["download_df"] = t6.get("download_df", pd.DataFrame()) 
+    t6["download_df"] = t6.get("download_df", pd.DataFrame())
 
-    # ---- Save ALL results once ----
+    # ---- Save ALL results ----
     return [t1, t2s1, t2s2, t3, t4, t5, t6]
 
 
@@ -370,9 +370,11 @@ with tab6:
     c2.metric("Random seed", stats.get("seed", r.get("seed", 123)))
     c3.metric(
         "Breach rate (%)",
-        f"{stats.get('breach_rate_pct'):.2f}"
-        if isinstance(stats.get("breach_rate_pct"), (int, float))
-        else "-",
+        (
+            f"{stats.get('breach_rate_pct'):.2f}"
+            if isinstance(stats.get("breach_rate_pct"), (int, float))
+            else "-"
+        ),
     )
 
     stats = r.get("stats") or {}
@@ -629,7 +631,7 @@ with tab8:
         Downloaded outputs can be used for further analysis, reporting, and decision support outside this dashboard.
         """
     )
-    path = "outputs/results.txt" 
+    path = "outputs/results.txt"
     PREVIEW_LINES = 500
 
     if not os.path.exists(path):
@@ -651,8 +653,8 @@ with tab8:
         st.text_area(
             label="",
             value=preview,
-            height=500,     
-            disabled=True,  
+            height=500,
+            disabled=True,
         )
         st.caption(f"Showing {min(PREVIEW_LINES, len(lines))} of {len(lines)} lines")
 
@@ -666,7 +668,7 @@ with tab8:
             data=txt.encode("utf-8", errors="replace"),
             file_name="results.txt",
             mime="text/plain",
-        )   
+        )
     # ---- Download ----
     st.subheader("Downloads")
     st.caption(
@@ -707,7 +709,13 @@ with tab8:
                 # -------------------------
                 # Tasks 1–3: Schedule only
                 # -------------------------
-                if task_name in ["Task 1", "Task 2", "Task 2 - Senerio 1", "Task 2 - Senerio 2", "Task 3"]:
+                if task_name in [
+                    "Task 1",
+                    "Task 2",
+                    "Task 2 - Senerio 1",
+                    "Task 2 - Senerio 2",
+                    "Task 3",
+                ]:
                     csv_text = single_task_csv_text(r, days, wage)
                     if csv_text:
                         st.download_button(

@@ -66,38 +66,3 @@ decision-analytics-dashboard/
 ├── runtime.txt  
 └── README.md  
 
----
-
-## 🎯 Intended Use
-
-This project is intended for **academic demonstration and coursework assessment**.  
-It showcases applied decision analytics concepts and illustrates how optimisation, statistics, and machine learning can be combined within a transparent and reproducible decision-support system.
-
-It is not designed as a production system.
-
----
-
-## ⚠️ Limitations and Future Improvements
-
-- Models prioritise interpretability over maximum predictive performance  
-- Dataset size and feature scope are constrained by coursework requirements  
-
-Potential future improvements include scenario comparison dashboards, enhanced visual analytics, benchmarking across alternative models, and role-based access control for data modification.
-
----
-
-## 📘 Methodological Justification
-
-The project prioritises model transparency and traceability over black-box performance.  
-Interpretable models and explicit logging mechanisms are used to align with managerial decision-making contexts where accountability and reproducibility are critical.
-
----
-
-## 📑 Assessment Alignment
-
-This project demonstrates:
-- Application of optimisation, statistical, and machine learning techniques  
-- Integration of analytics into an interactive user interface  
-- Clean and modular Python code structure  
-- Consideration of auditability and reproducibility  
-- Clear communication of analytical results
